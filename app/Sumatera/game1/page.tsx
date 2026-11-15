@@ -13,6 +13,8 @@ import IdleOverlay from "./components/IdleOverlay";
 import WinOverlay from "./components/WinOverlay";
 import LostOverlay from "./components/LostOverlay";
 import GameFooter from "./components/GameFooter";
+import Link from "next/link";
+import { ArrowLeft, Home } from "lucide-react";
 
 export default function RumahGadangBuilder() {
   const [pieces, setPieces] = useState<Piece[]>(PIECES_DATA);
@@ -91,7 +93,32 @@ export default function RumahGadangBuilder() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col items-center justify-center p-4 font-sans overflow-hidden">
+    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col items-center justify-center p-4 font-sans overflow-hidden relative">
+      {/* Top Navigation Bar - Selalu tampil & aktif saat sedang menyusun maupun gameplay */}
+      <nav className="fixed top-0 left-0 w-full p-3 md:p-5 flex justify-between items-center z-50 pointer-events-auto">
+        <div className="flex items-center gap-2 md:gap-3">
+          <Link 
+            href="/Sumatera" 
+            className="flex items-center gap-2 text-[var(--primary)] hover:bg-white bg-white/80 backdrop-blur-md px-3.5 py-2 md:px-4 md:py-2.5 rounded-2xl font-bold text-xs md:text-sm border border-[var(--secondary)]/15 shadow-sm transition-all active:scale-95 cursor-pointer"
+          >
+            <ArrowLeft size={16} />
+            <span>Kembali ke Sumatera</span>
+          </Link>
+          <Link 
+            href="/" 
+            className="flex items-center gap-1.5 text-[var(--secondary)] hover:text-[var(--primary)] hover:bg-white bg-white/70 backdrop-blur-md px-3 py-2 md:px-3.5 md:py-2.5 rounded-2xl font-semibold text-xs md:text-sm border border-[var(--secondary)]/15 transition-all active:scale-95 cursor-pointer"
+          >
+            <Home size={14} />
+            <span>Halaman Utama</span>
+          </Link>
+        </div>
+
+        <div className="hidden sm:flex items-center gap-2 bg-white/80 backdrop-blur-md px-4 py-2 rounded-full border border-[var(--secondary)]/15 shadow-sm text-xs font-bold text-[var(--primary)]">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Level 1: Rumah Adat Minangkabau</span>
+        </div>
+      </nav>
+
       <GameHeader />
 
       <div 
