@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { useTransitionContext } from "@/components/TransitionContext";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, MapPin, Sparkles, Compass, Layers, Map as MapIcon, Globe } from "lucide-react";
@@ -16,34 +15,33 @@ import { DIORAMA_ISLANDS, IslandDioramaCard, IslandDioramaData } from "@/compone
 const ISLANDS = [
   {
     name: "Sumatera",
-    file: "/pulau/sumatera.svg",
+    file: "/pulau/sumatera.webp",
     style: { width: "30%", left: "-5%", top: "20%" },
   },
   {
     name: "Kalimantan",
-    file: "/pulau/Kalimantan.svg",
+    file: "/pulau/Kalimantan.webp",
     style: { width: "25%", left: "25%", top: "20%" },
   },
   {
     name: "Jawa",
-    file: "/pulau/jawa.svg",
+    file: "/pulau/jawa.webp",
     style: { width: "65%", left: "17%", top: "90%" },
   },
   {
     name: "Sulawesi",
-    file: "/pulau/sulawesi.svg",
+    file: "/pulau/sulawesi.webp",
     style: { width: "25%", left: "50%", top: "15%" },
   },
   {
     name: "Papua",
-    file: "/pulau/papua.svg",
+    file: "/pulau/papua.webp",
     style: { width: "40%", left: "70%", top: "28%" },
   },
 ];
 
 export default function NusantaraPage() {
-  const router = useRouter();
-  const { setIsAnimating } = useTransitionContext();
+  const { setIsAnimating, triggerTransition } = useTransitionContext();
   const [selectedIsland, setSelectedIsland] = useState<string | null>(null);
   const [hoveredIsland, setHoveredIsland] = useState<string | null>(null);
   const [selectedMascot, setSelectedMascot] = useState<CulturalMascot | null>(null);
@@ -332,7 +330,7 @@ export default function NusantaraPage() {
                    transition-all duration-200
                    flex items-center gap-2
                  "
-                onClick={() => router.push(`/${selectedIsland}`)}
+                onClick={() => triggerTransition(`/${selectedIsland}`)}
               >
                 <span className="uppercase tracking-wider text-[11px] md:text-xs">
                   Masuk Pulau

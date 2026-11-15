@@ -65,7 +65,7 @@ export default function MascotDetailModal({
                 {mascot.title}
               </p>
               <p className="text-xs text-[#335377] italic mt-1">
-                "{mascot.tagline}"
+                “{mascot.tagline}”
               </p>
             </div>
           </div>
@@ -77,7 +77,7 @@ export default function MascotDetailModal({
               <span>Sapaan Maskot Budaya:</span>
             </p>
             <p className="italic font-serif text-sm text-[#0F2C59]">
-              "{mascot.greeting}"
+              “{mascot.greeting}”
             </p>
           </div>
 

@@ -88,12 +88,12 @@ export default function MascotCarousel() {
                 {activeMascot.name}
               </h3>
               <p className="text-xs font-bold text-[#D97706] mt-0.5">
-                {activeMascot.title} • <span className="italic font-normal text-[#335377]">"{activeMascot.tagline}"</span>
+                {activeMascot.title} • <span className="italic font-normal text-[#335377]">“{activeMascot.tagline}”</span>
               </p>
 
               {/* Greeting */}
               <div className="my-3.5 p-3 rounded-xl bg-[#EBF3FA] border border-[#0F2C59]/10 text-xs text-[#0F2C59] italic font-serif leading-relaxed">
-                "{activeMascot.greeting}"
+                “{activeMascot.greeting}”
               </div>
 
               {/* Fun Fact */}

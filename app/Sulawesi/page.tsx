@@ -44,13 +44,25 @@ export default function SulawesiOnboarding() {
   const modelsRef = useRef<{ [key: string]: THREE.Group }>({});
   const animationFrameRef = useRef<number | null>(null);
   const timeRef = useRef<number>(0);
+  const isMobileRef = useRef(false);
+  const activeGameIndexRef = useRef(0);
 
   useEffect(() => {
-    // Mobile check
+    isMobileRef.current = isMobile;
+  }, [isMobile]);
+
+  useEffect(() => {
+    activeGameIndexRef.current = activeGameIndex;
+  }, [activeGameIndex]);
+
+  useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
+  useEffect(() => {
     if (step !== 1 || !mountRef.current) return;
 
     // --- SETUP SCENE ---
@@ -68,7 +80,7 @@ export default function SulawesiOnboarding() {
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -121,7 +133,8 @@ export default function SulawesiOnboarding() {
             if (id === "game1" && c.material) {
               const mat = Array.isArray(c.material) ? c.material : [c.material];
               mat.forEach((m) => {
-                if ("color" in m) (m as any).color.set(0xffffff);
+                const standard = m as THREE.MeshStandardMaterial;
+                if (standard.color) standard.color.set(0xffffff);
               });
             }
           }
@@ -165,9 +178,11 @@ export default function SulawesiOnboarding() {
       Object.values(modelsRef.current).forEach((model) => {
         const isHovered = model.userData.hovered;
         const isActive =
-          isMobile &&
-          ((model.userData.id === "game1" && activeGameIndex === 0) ||
-            (model.userData.id === "game2" && activeGameIndex === 1));
+          isMobileRef.current &&
+          ((model.userData.id === "game1" &&
+            activeGameIndexRef.current === 0) ||
+            (model.userData.id === "game2" &&
+              activeGameIndexRef.current === 1));
 
         const baseScale = model.userData.originalScale;
         const targetScale = isHovered || isActive ? baseScale * 1.1 : baseScale;
@@ -237,7 +252,7 @@ export default function SulawesiOnboarding() {
         while (obj.parent && !obj.userData.id) obj = obj.parent;
         const target =
           obj.userData.id === "game1" ? "/Sulawesi/game1" : "/Sulawesi/game2";
-        router.push(target);
+        triggerTransition(target);
       }
     };
 
@@ -256,13 +271,36 @@ export default function SulawesiOnboarding() {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mousedown", onClick);
       window.removeEventListener("resize", onResize);
-      if (rendererRef.current && rendererRef.current.domElement) {
-        rendererRef.current.dispose();
-      }
       if (animationFrameRef.current)
         cancelAnimationFrame(animationFrameRef.current);
+      dracoLoader.dispose();
+
+      Object.values(modelsRef.current).forEach((model) => {
+        scene.remove(model);
+        model.traverse((o) => {
+          if (o instanceof THREE.Mesh) {
+            o.geometry.dispose();
+            const materials = Array.isArray(o.material)
+              ? o.material
+              : [o.material];
+            materials.forEach((m) => m.dispose());
+          }
+        });
+      });
+      modelsRef.current = {};
+      groundGeo.dispose();
+      groundMat.dispose();
+      scene.clear();
+
+      renderer.dispose();
+      if (renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
+      rendererRef.current = null;
+      sceneRef.current = null;
+      cameraRef.current = null;
     };
-  }, [step, isMobile]); // Added isMobile to dependencies
+  }, [step, triggerTransition]);
 
   useEffect(() => {
     if (step !== 1) return;
@@ -314,9 +352,6 @@ export default function SulawesiOnboarding() {
     const target =
       activeGameIndex === 0 ? "/Sulawesi/game1" : "/Sulawesi/game2";
     triggerTransition(target);
-    setTimeout(() => {
-      window.location.href = target;
-    }, 2500);
   };
 
   return (
@@ -355,11 +390,11 @@ export default function SulawesiOnboarding() {
                   Sulawesi, pulau berbentuk unik seperti anggrek, adalah rumah
                   bagi keragaman budaya yang luar biasa. Dari filosofi{" "}
                   <span className="text-[var(--color-accent-gold)] font-bold italic">
-                    Siri'
+                    Siri’
                   </span>{" "}
                   hingga tradisi pemakaman megah{" "}
                   <span className="text-[var(--color-accent-gold)] font-bold italic">
-                    Rambu Solo'
+                    Rambu Solo’
                   </span>
                   .
                 </p>
@@ -450,7 +485,7 @@ export default function SulawesiOnboarding() {
                 className="relative z-10 w-full max-w-[320px] md:max-w-none"
               >
                 <Image
-                  src="/pulau/sulawesi.svg"
+                  src="/pulau/sulawesi.webp"
                   alt="Peta Sulawesi"
                   width={500}
                   height={500}
@@ -520,9 +555,9 @@ export default function SulawesiOnboarding() {
               )}
             </div>
 
-            {/* Mobile Controls */}
-            <div className="md:hidden absolute bottom-8 w-full flex flex-col items-center gap-5 z-20">
-              <div className="flex gap-3 mb-1">
+            {/* Play Controls (mobile + desktop) */}
+            <div className="absolute bottom-8 w-full flex flex-col items-center gap-5 z-20">
+              <div className="flex gap-3 mb-1 md:hidden">
                 <div
                   className={`h-2.5 rounded-full transition-all duration-300 ${activeGameIndex === 0 ? "w-8 bg-[var(--color-primary)]" : "w-2.5 bg-[var(--color-primary)]/30"}`}
                 />
@@ -549,7 +584,7 @@ export default function SulawesiOnboarding() {
             </div>
 
             {/* Hint */}
-            <div className="hidden md:block absolute bottom-8 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
+            <div className="hidden md:block absolute bottom-24 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
               <p className="text-[var(--color-accent)] text-sm opacity-50 tracking-wide text-center animate-pulse">
                 Arahkan kursor ke model untuk melihat detail
               </p>

@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { motion, AnimatePresence } from "framer-motion";
-import { Rotate3D, Sparkles } from "lucide-react";
+import { Rotate3D } from "lucide-react";
 
 interface RelicData {
   id: string;
@@ -16,6 +16,21 @@ interface RelicData {
   yOffset: number;
   rotationY: number;
   description: string;
+}
+
+function disposeModel(model: THREE.Object3D) {
+  model.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    child.geometry?.dispose();
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    materials.forEach((material) => {
+      if (!material) return;
+      Object.values(material).forEach((value) => {
+        if (value instanceof THREE.Texture) value.dispose();
+      });
+      material.dispose();
+    });
+  });
 }
 
 const RELICS: RelicData[] = [
@@ -71,14 +86,17 @@ export default function CulturalRelic3D({ className = "" }: { className?: string
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const currentModelRef = useRef<THREE.Group | null>(null);
+  const loadedModelsRef = useRef<Set<THREE.Group>>(new Set());
+  const loadTokenRef = useRef<number>(0);
   const animationFrameRef = useRef<number | null>(null);
   const isDraggingRef = useRef<boolean>(false);
   const previousMousePositionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const rotationVelocityRef = useRef<{ x: number; y: number }>({ x: 0, y: 0.005 });
+  const rotationVelocityRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   useEffect(() => {
     const container = mountRef.current;
     if (!container) return;
+    const loadedModels = loadedModelsRef.current;
 
     const width = container.clientWidth || 450;
     const height = container.clientHeight || 450;
@@ -142,16 +160,17 @@ export default function CulturalRelic3D({ className = "" }: { className?: string
     pedestal.receiveShadow = true;
     scene.add(pedestal);
 
-    let clock = new THREE.Clock();
+    const clock = new THREE.Clock();
     const animate = () => {
       animationFrameRef.current = requestAnimationFrame(animate);
       const elapsedTime = clock.getElapsedTime();
 
       if (currentModelRef.current) {
         if (!isDraggingRef.current) {
+          // Rotasi hanya berasal dari drag pengguna; tidak ada auto-spin.
           currentModelRef.current.rotation.y += rotationVelocityRef.current.y;
-          rotationVelocityRef.current.y = THREE.MathUtils.lerp(rotationVelocityRef.current.y, 0.004, 0.05);
-          rotationVelocityRef.current.x = THREE.MathUtils.lerp(rotationVelocityRef.current.x, 0, 0.05);
+          rotationVelocityRef.current.y = THREE.MathUtils.lerp(rotationVelocityRef.current.y, 0, 0.06);
+          rotationVelocityRef.current.x = THREE.MathUtils.lerp(rotationVelocityRef.current.x, 0, 0.06);
           currentModelRef.current.rotation.x += rotationVelocityRef.current.x;
           currentModelRef.current.rotation.x = THREE.MathUtils.clamp(currentModelRef.current.rotation.x, -0.25, 0.25);
         }
@@ -177,23 +196,47 @@ export default function CulturalRelic3D({ className = "" }: { className?: string
     return () => {
       window.removeEventListener("resize", handleResize);
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+
+      // Batalkan load yang masih berjalan dan bersihkan semua model agar
+      // tidak ada objek lama yang tertinggal di scene.
+      loadTokenRef.current += 1;
+      loadedModels.forEach((model) => {
+        scene.remove(model);
+        disposeModel(model);
+      });
+      loadedModels.clear();
+      currentModelRef.current = null;
+      sceneRef.current = null;
+      cameraRef.current = null;
+
       if (rendererRef.current && rendererRef.current.domElement) {
         container.removeChild(rendererRef.current.domElement);
         rendererRef.current.dispose();
+        rendererRef.current = null;
       }
     };
   }, []);
 
   // Load Model
   useEffect(() => {
-    if (!sceneRef.current) return;
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    const token = ++loadTokenRef.current;
     setLoading(true);
     setLoadError(false);
 
-    if (currentModelRef.current) {
-      sceneRef.current.remove(currentModelRef.current);
-      currentModelRef.current = null;
-    }
+    // Hapus semua model yang pernah dimuat (bukan hanya model aktif) agar
+    // tidak ada objek lama, mis. Gamelan, yang tertinggal saat tab diganti.
+    loadedModelsRef.current.forEach((model) => {
+      scene.remove(model);
+      disposeModel(model);
+    });
+    loadedModelsRef.current.clear();
+    currentModelRef.current = null;
+
+    isDraggingRef.current = false;
+    rotationVelocityRef.current = { x: 0, y: 0 };
 
     const loader = new GLTFLoader();
     const dracoLoader = new DRACOLoader();
@@ -204,6 +247,13 @@ export default function CulturalRelic3D({ className = "" }: { className?: string
       activeRelic.path,
       (gltf) => {
         const model = gltf.scene;
+
+        // Abaikan hasil load yang sudah basi (tab berganti / komponen unmount).
+        if (token !== loadTokenRef.current || sceneRef.current !== scene) {
+          disposeModel(model);
+          return;
+        }
+
         model.scale.set(activeRelic.scale, activeRelic.scale, activeRelic.scale);
         model.position.set(0, activeRelic.yOffset, 0);
         model.rotation.y = activeRelic.rotationY;
@@ -217,33 +267,43 @@ export default function CulturalRelic3D({ className = "" }: { className?: string
 
         model.userData = { baseY: activeRelic.yOffset };
 
-        if (sceneRef.current) {
-          sceneRef.current.add(model);
-          currentModelRef.current = model;
-        }
+        scene.add(model);
+        loadedModelsRef.current.add(model);
+        currentModelRef.current = model;
         setLoading(false);
       },
       undefined,
       (err) => {
+        if (token !== loadTokenRef.current) return;
         console.error("Relic loading error", err);
         setLoading(false);
         setLoadError(true);
       }
     );
+
+    return () => {
+      // Invalidate respons load yang masih berjalan saat tab berubah.
+      if (loadTokenRef.current === token) loadTokenRef.current += 1;
+    };
   }, [activeRelic]);
 
-  const handlePointerDown = (e: React.PointerEvent) => {
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     isDraggingRef.current = true;
     previousMousePositionRef.current = { x: e.clientX, y: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
   };
 
-  const handlePointerMove = (e: React.PointerEvent) => {
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!isDraggingRef.current || !currentModelRef.current) return;
     const deltaX = e.clientX - previousMousePositionRef.current.x;
     const deltaY = e.clientY - previousMousePositionRef.current.y;
 
     currentModelRef.current.rotation.y += deltaX * 0.01;
-    currentModelRef.current.rotation.x += deltaY * 0.005;
+    currentModelRef.current.rotation.x = THREE.MathUtils.clamp(
+      currentModelRef.current.rotation.x + deltaY * 0.005,
+      -0.25,
+      0.25,
+    );
 
     rotationVelocityRef.current = {
       x: deltaY * 0.002,
@@ -260,18 +320,16 @@ export default function CulturalRelic3D({ className = "" }: { className?: string
   return (
     <div className={`relative flex flex-col items-center w-full max-w-xl mx-auto select-none ${className}`}>
       {/* 3D Stage Container */}
-      <div
-        className="relative w-full h-[360px] sm:h-[420px] lg:h-[460px] rounded-3xl overflow-hidden bg-white border border-[#0F2C59]/15 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
-      >
-        {/* Subtle Ambient Ocean Gradient */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#EBF3FA]/70 via-white to-[#DBEAFE]/30 pointer-events-none" />
-
+      <div className="relative w-full h-[360px] sm:h-[420px] lg:h-[460px] rounded-3xl overflow-hidden bg-gradient-to-b from-[#F2F8FE] via-white to-[#E3EDF9] border border-[#0F2C59]/15 shadow-xl flex items-center justify-center">
         {/* 3D Canvas Mount Point */}
-        <div ref={mountRef} className="w-full h-full" />
+        <div
+          ref={mountRef}
+          className="w-full h-full cursor-grab touch-none active:cursor-grabbing"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+        />
 
         {/* Loading State */}
         <AnimatePresence>
@@ -294,38 +352,37 @@ export default function CulturalRelic3D({ className = "" }: { className?: string
         {loadError && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#EBF3FA] z-20 p-6 text-center">
             <img
-              src="/mascots/mascot-jawa.png"
+              src="/mascots/mascot-jawa.webp"
               alt="Mascot Gatot Cilik"
               className="w-44 h-auto drop-shadow-md mb-3"
             />
             <p className="text-[#0F2C59] font-bold text-sm">Artefak Budaya Nusantara</p>
           </div>
         )}
+      </div>
 
-        {/* Top Hint Badge */}
-        <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 border border-[#0F2C59]/15 text-[#0F2C59] text-xs font-semibold shadow-sm pointer-events-none">
-          <Rotate3D className="w-3.5 h-3.5 text-[#D97706]" />
-          <span>Putar Objek 360°</span>
-        </div>
+      {/* Hint & relic info sit below the stage so nothing covers the 3D object */}
+      <div className="w-full mt-3 flex items-center gap-1.5 px-1 text-xs font-semibold text-[#0F2C59]/70">
+        <Rotate3D className="w-3.5 h-3.5 text-[#D97706]" />
+        <span>Putar objek 360° dengan drag</span>
+      </div>
 
-        {/* Bottom Relic Info Banner */}
-        <div className="absolute bottom-4 inset-x-4 z-10 p-3.5 rounded-2xl bg-white/95 border border-[#0F2C59]/15 text-left shadow-lg flex items-center justify-between gap-3 pointer-events-auto backdrop-blur-md text-[#0F2C59]">
-          <div>
-            <span className="text-[10px] font-mono tracking-wider text-[#2563EB] uppercase font-bold">
-              {activeRelic.region}
-            </span>
-            <h4 className="text-base font-bold text-[#0F2C59] font-serif leading-tight">
-              {activeRelic.name}
-            </h4>
-            <p className="text-xs text-[#335377] line-clamp-1 mt-0.5">
-              {activeRelic.description}
-            </p>
-          </div>
+      <div className="w-full mt-2 p-3.5 rounded-2xl bg-white border border-[#0F2C59]/15 text-left shadow-sm flex items-center justify-between gap-3 text-[#0F2C59]">
+        <div>
+          <span className="text-[10px] font-mono tracking-wider text-[#2563EB] uppercase font-bold">
+            {activeRelic.region}
+          </span>
+          <h4 className="text-base font-bold text-[#0F2C59] font-serif leading-tight">
+            {activeRelic.name}
+          </h4>
+          <p className="text-xs text-[#335377] line-clamp-1 mt-0.5">
+            {activeRelic.description}
+          </p>
         </div>
       </div>
 
       {/* Relic Switcher Tabs */}
-      <div className="w-full mt-3.5 flex items-center justify-center gap-2 flex-wrap">
+      <div className="w-full mt-3 flex items-center justify-center gap-2 flex-wrap">
         {RELICS.map((relic) => {
           const isActive = relic.id === activeRelic.id;
           return (

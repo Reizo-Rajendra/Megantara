@@ -69,6 +69,9 @@ export default function GamelanGame() {
   const noteMaterialsRef = useRef<THREE.MeshStandardMaterial[]>([]);
   const noteGeoRef = useRef<THREE.CylinderGeometry | null>(null);
   const animationFrameRef = useRef<number>(0);
+  // Guard agar endGame hanya dijadwalkan sekali (dulu setTimeout dipanggil tiap frame).
+  const hasEndedRef = useRef(false);
+  const endTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- Initialization ---
 
@@ -121,6 +124,7 @@ export default function GamelanGame() {
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
     containerRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
@@ -262,10 +266,31 @@ export default function GamelanGame() {
       window.removeEventListener("resize", handleResize);
       if (animationFrameRef.current)
         cancelAnimationFrame(animationFrameRef.current);
-      if (rendererRef.current && containerRef.current) {
-        containerRef.current.removeChild(rendererRef.current.domElement);
+      if (endTimerRef.current) clearTimeout(endTimerRef.current);
+      countdownTimerRef.current.forEach(clearTimeout);
+      countdownTimerRef.current = [];
+
+      scene.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.geometry.dispose();
+          const materials = Array.isArray(o.material)
+            ? o.material
+            : [o.material];
+          materials.forEach((m) => m.dispose());
+        }
+      });
+      scene.clear();
+      notesRef.current = [];
+      audioRef.current?.dispose();
+      audioRef.current = null;
+
+      if (renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
-      rendererRef.current?.dispose();
+      renderer.dispose();
+      rendererRef.current = null;
+      sceneRef.current = null;
+      cameraRef.current = null;
     };
   }, []);
 
@@ -442,11 +467,9 @@ export default function GamelanGame() {
     audioRef.current?.playMissSound(); // Beep
     sceneRef.current?.remove(note.mesh);
 
-    setLife((l) => {
-      const newLife = l - 1;
-      if (newLife <= 0) endGame(false);
-      return newLife;
-    });
+    const nextLife = life - 1;
+    setLife(Math.max(0, nextLife));
+    if (nextLife <= 0) endGame(false);
     setCombo(0);
     setFeedback({ text: "MISS", color: "text-red-600", id: Date.now() });
 
@@ -460,6 +483,8 @@ export default function GamelanGame() {
   };
 
   const endGame = (isWin: boolean) => {
+    if (hasEndedRef.current) return;
+    hasEndedRef.current = true;
     setGameState(isWin ? "WIN" : "LOSE");
     const totalNotes = totalNotesRef.current;
     const maxPossibleScore = totalNotes * SCORE_PERFECT;
@@ -478,6 +503,11 @@ export default function GamelanGame() {
     // Clear any active countdown timers
     countdownTimerRef.current.forEach(clearTimeout);
     countdownTimerRef.current = [];
+    if (endTimerRef.current) {
+      clearTimeout(endTimerRef.current);
+      endTimerRef.current = null;
+    }
+    hasEndedRef.current = false;
 
     // Reset
     notesRef.current.forEach((n) => sceneRef.current?.remove(n.mesh));
@@ -582,14 +612,8 @@ export default function GamelanGame() {
         life > 0
       ) {
         // Wait a bit before winning
-        if (gameState === "PLAYING") {
-          // Check if we actually finished waiting (hacky check: if last note was long ago)
-          setTimeout(() => endGame(true), 1000); // This might trigger multiple times if not careful?
-          // Actually safer to do:
-          // setGameState((prev) => prev === 'PLAYING' ? 'WIN' : prev);
-          // But we need to call endGame for stats.
-          // Correct approach: this block runs every frame. We need a flag or logic.
-          // Simplified:
+        if (gameState === "PLAYING" && !hasEndedRef.current && !endTimerRef.current) {
+          endTimerRef.current = setTimeout(() => endGame(true), 1000);
         }
       }
 

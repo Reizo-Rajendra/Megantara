@@ -3,13 +3,15 @@
 import React, { useEffect, useMemo } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useTransitionContext } from "./TransitionContext";
 
 const CloudTransition = () => {
   const { isAnimating, setIsAnimating, targetPath } = useTransitionContext();
   const router = useRouter();
+  const pathname = usePathname();
   const [isMobile, setIsMobile] = React.useState(false);
+  const previousPathRef = React.useRef(pathname);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -41,6 +43,15 @@ const CloudTransition = () => {
       };
     }
   }, [isAnimating, targetPath, router, setIsAnimating, DEBUG_SHOW]);
+
+  // Jaring pengaman: setelah navigasi benar-benar terjadi, pastikan overlay
+  // tidak pernah tertinggal menutupi halaman (mis. jika timer terputus).
+  useEffect(() => {
+    if (previousPathRef.current === pathname) return;
+    previousPathRef.current = pathname;
+    const safety = setTimeout(() => setIsAnimating(false), 1200);
+    return () => clearTimeout(safety);
+  }, [pathname, setIsAnimating]);
 
   const cloudVariants: Variants = {
     initialLeft: { x: "-100%", opacity: 0, scale: 1, rotateZ: 0.01, z: 0 },
@@ -169,7 +180,7 @@ const CloudTransition = () => {
               >
                 <div className="relative w-full h-full max-w-[90%] md:max-w-[80%] max-h-[90%] md:max-h-[80%]">
                   <Image
-                    src="/assets/entrance-clouds-blue.png"
+                    src="/assets/entrance-clouds-blue.webp"
                     alt={`Cloud ${cloud.id}`}
                     fill
                     sizes="100vw"

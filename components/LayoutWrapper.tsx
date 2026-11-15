@@ -10,13 +10,12 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
   const { isAnimating } = useTransitionContext();
   const pathname = usePathname();
 
-  const isAuthPage = pathname === "/login" || pathname === "/register";
   // Only hide navbar in active fullscreen mini-game screens
   const isGameFullscreenPage =
     pathname.includes("/game1") ||
     pathname.includes("/game2");
 
-  if (isAuthPage || isGameFullscreenPage) {
+  if (isGameFullscreenPage) {
     return <>{children}</>;
   }
 

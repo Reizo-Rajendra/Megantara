@@ -16,7 +16,7 @@ const SnappedPieces: React.FC<SnappedPiecesProps> = ({ pieces }) => {
         // Show complete full image when all pieces are done - NO GAPS!
         <motion.img
           key="complete-gadang"
-          src="/Sumatera/game1/gadangfull.png"
+          src="/Sumatera/game1/gadangfull.webp"
           alt="Rumah Gadang Complete"
           className="absolute object-contain drop-shadow-[0_20px_40px_rgba(84,51,16,0.2)]"
           initial={{ scale: 0.8, opacity: 0 }}

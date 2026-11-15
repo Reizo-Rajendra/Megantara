@@ -103,7 +103,7 @@ export default function MascotMapPin({
 
               <div className="flex items-center gap-2 mb-1">
                 <div className="w-7 h-7 rounded-lg bg-[#EBF3FA] p-0.5 shrink-0 overflow-hidden border border-[#0F2C59]/10">
-                  <img src={mascot.image} alt={mascot.name} className="w-full h-full object-contain" />
+                  <img src={mascot.image} alt={mascot.name} loading="lazy" decoding="async" className="w-full h-full object-contain" />
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-[#0F2C59] font-serif leading-tight">
@@ -116,7 +116,7 @@ export default function MascotMapPin({
               </div>
 
               <p className="text-[11px] text-[#0F2C59] leading-relaxed italic bg-[#EBF3FA] p-2.5 rounded-xl border border-[#0F2C59]/10 my-2">
-                "{mascot.greeting}"
+                “{mascot.greeting}”
               </p>
 
               <div className="flex items-center justify-between pt-1 border-t border-gray-100">

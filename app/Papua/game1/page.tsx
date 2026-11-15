@@ -95,6 +95,7 @@ export default function KayuMaleleGame() {
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
     rendererRef.current = renderer;
     mountRef.current.appendChild(renderer.domElement);
@@ -547,10 +548,15 @@ export default function KayuMaleleGame() {
   const playSound = (type: string) => {
     if (typeof window === "undefined") return;
 
-    if (window.AudioContext || (window as any).webkitAudioContext) {
-      const ctx = new (
-        (window as any).AudioContext || (window as any).webkitAudioContext
-      )();
+    if (window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext) {
+      const AudioCtor =
+        window.AudioContext ||
+        (
+          window as unknown as {
+            webkitAudioContext: typeof AudioContext;
+          }
+        ).webkitAudioContext;
+      const ctx = new AudioCtor();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);

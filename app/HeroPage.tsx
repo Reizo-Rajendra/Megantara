@@ -5,11 +5,41 @@ import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { MoveRight, Compass, Sparkles, Gamepad2, Cloud } from "lucide-react";
-import FeatureHighlights from "@/components/HeroPage/FeatureHighlights";
-import NusantaraExpeditionGrid from "@/components/HeroPage/NusantaraExpeditionGrid";
-import MascotCarousel from "@/components/HeroPage/MascotCarousel";
 import LogoLoop, { logos } from "@/components/HeroPage/LogoLoop";
 import { FloatingMegaMendungClouds } from "@/components/Nusantara/MegaMendungClouds";
+
+// Section di bawah fold dimuat terpisah agar JS awal beranda lebih ringan.
+function SectionSkeleton({ minHeight }: { minHeight: string }) {
+  return (
+    <div
+      className="w-full animate-pulse bg-[#E2EDF8]/40"
+      style={{ minHeight }}
+      aria-hidden="true"
+    />
+  );
+}
+
+const sectionLoading = (minHeight: string) => {
+  function SectionLoading() {
+    return <SectionSkeleton minHeight={minHeight} />;
+  }
+  return SectionLoading;
+};
+
+const NusantaraExpeditionGrid = dynamic(
+  () => import("@/components/HeroPage/NusantaraExpeditionGrid"),
+  { ssr: false, loading: sectionLoading("70vh") },
+);
+
+const MascotCarousel = dynamic(
+  () => import("@/components/HeroPage/MascotCarousel"),
+  { ssr: false, loading: sectionLoading("60vh") },
+);
+
+const FeatureHighlights = dynamic(
+  () => import("@/components/HeroPage/FeatureHighlights"),
+  { ssr: false, loading: sectionLoading("50vh") },
+);
 
 // Dynamically import 3D Canvas
 const CulturalRelic3D = dynamic(() => import("@/components/HeroPage/CulturalRelic3D"), {

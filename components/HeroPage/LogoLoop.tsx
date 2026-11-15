@@ -43,20 +43,20 @@ export interface LogoLoopProps {
 }
 
 export const logos: LogoItem[] = [
-  { src: "/assets/LogoLoop/BRIN.png", alt: "BRIN" },
-  { src: "/assets/LogoLoop/Ditjen-Kebudayaan.png", alt: "Ditjen Kebudayaan" },
+  { src: "/assets/LogoLoop/BRIN.webp", alt: "BRIN" },
+  { src: "/assets/LogoLoop/Ditjen-Kebudayaan.webp", alt: "Ditjen Kebudayaan" },
   {
-    src: "/assets/LogoLoop/Kementrian-pendidikan.png",
+    src: "/assets/LogoLoop/Kementrian-pendidikan.webp",
     alt: "Kementerian Pendidikan",
   },
   {
-    src: "/assets/LogoLoop/badan-pembinaan-bahasa.png",
+    src: "/assets/LogoLoop/badan-pembinaan-bahasa.webp",
     alt: "Badan Pembinaan Bahasa",
   },
-  { src: "/assets/LogoLoop/balai-pelestarian.png", alt: "Balai Pelestarian" },
-  { src: "/assets/LogoLoop/museum-nasional.png", alt: "Museum Nasional" },
+  { src: "/assets/LogoLoop/balai-pelestarian.webp", alt: "Balai Pelestarian" },
+  { src: "/assets/LogoLoop/museum-nasional.webp", alt: "Museum Nasional" },
   {
-    src: "/assets/LogoLoop/perspustakaan-nasional.png",
+    src: "/assets/LogoLoop/perspustakaan-nasional.webp",
     alt: "Perpustakaan Nasional",
   },
 ];
@@ -394,9 +394,9 @@ export const LogoLoop = React.memo<LogoLoopProps>(
               grayscale &&
                 "grayscale transition-all duration-300 group-hover/item:grayscale-0",
             )}
-            aria-hidden={!!(item as any).href && !(item as any).ariaLabel}
+            aria-hidden={!!item.href && !item.ariaLabel}
           >
-            {(item as any).node}
+            {item.node}
           </span>
         ) : (
           <img
@@ -408,13 +408,13 @@ export const LogoLoop = React.memo<LogoLoopProps>(
               grayscale &&
                 "grayscale transition-all duration-300 group-hover/item:grayscale-0",
             )}
-            src={(item as any).src}
-            srcSet={(item as any).srcSet}
-            sizes={(item as any).sizes}
-            width={(item as any).width}
-            height={(item as any).height}
-            alt={(item as any).alt ?? ""}
-            title={(item as any).title}
+            src={item.src}
+            srcSet={item.srcSet}
+            sizes={item.sizes}
+            width={item.width}
+            height={item.height}
+            alt={item.alt ?? ""}
+            title={item.title}
             loading="lazy"
             decoding="async"
             draggable={false}
@@ -422,10 +422,10 @@ export const LogoLoop = React.memo<LogoLoopProps>(
         );
 
         const itemAriaLabel = isNodeItem
-          ? ((item as any).ariaLabel ?? (item as any).title)
-          : ((item as any).alt ?? (item as any).title);
+          ? (item.ariaLabel ?? item.title)
+          : (item.alt ?? item.title);
 
-        const inner = (item as any).href ? (
+        const inner = item.href ? (
           <a
             className={cx(
               "inline-flex items-center no-underline rounded",
@@ -433,7 +433,7 @@ export const LogoLoop = React.memo<LogoLoopProps>(
               "hover:opacity-80",
               "focus-visible:outline focus-visible:outline-current focus-visible:outline-offset-2",
             )}
-            href={(item as any).href}
+            href={item.href}
             aria-label={itemAriaLabel || "logo link"}
             target="_blank"
             rel="noreferrer noopener"

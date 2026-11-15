@@ -54,6 +54,8 @@ const PieceShelf: React.FC<PieceShelfProps> = ({ pieces, canvasRef, onDrag, chec
             <img 
               src={piece.img} 
               alt={piece.name}
+              loading="lazy"
+              decoding="async"
               className="w-full h-full object-cover pointer-events-none select-none transition-transform duration-500 group-hover:scale-110"
               draggable={false}
             />

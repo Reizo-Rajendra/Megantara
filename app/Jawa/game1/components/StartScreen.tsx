@@ -31,7 +31,7 @@ export const StartScreen = ({
 
         <div className="animate-[float-wayang_6s_infinite_ease-in-out] mb-2">
           <img
-            src="/Jawa/game1/gamelan-logo.png"
+            src="/Jawa/game1/gamelan-logo.webp"
             alt="Gamelan Saron Logo"
             width={260}
             height={260}

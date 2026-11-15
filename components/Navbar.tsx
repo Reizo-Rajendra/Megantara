@@ -4,16 +4,17 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Compass,
   Home,
   ChevronDown,
-  Cloud,
   Landmark,
   Music,
   Trees,
   Ship,
   Sparkles,
+  Map,
 } from "lucide-react";
 
 interface NavItem {
@@ -24,6 +25,11 @@ interface NavItem {
 const navItems: NavItem[] = [
   { name: "Beranda", link: "/" },
   { name: "Nusantara", link: "/Nusantara" },
+];
+
+const mobileNavItems = [
+  { name: "Beranda", link: "/", icon: Home },
+  { name: "Nusantara", link: "/Nusantara", icon: Compass },
 ];
 
 const islandQuickLinks = [
@@ -37,29 +43,39 @@ const islandQuickLinks = [
 export default function Navbar() {
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [isNusaDropdownOpen, setIsNusaDropdownOpen] = useState(false);
+  const [isMobileRegionsOpen, setIsMobileRegionsOpen] = useState(false);
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
-  const [lastScrollY, setLastScrollY] = useState(0);
+  const lastScrollYRef = useRef(0);
   const nusaDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Tutup panel wilayah saat berpindah halaman.
+  useEffect(() => {
+    setIsMobileRegionsOpen(false);
+    setIsNusaDropdownOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
       setScrolled(currentScrollY > 20);
 
-      if (currentScrollY > lastScrollY && currentScrollY > 100) {
+      if (
+        currentScrollY > lastScrollYRef.current &&
+        currentScrollY > 100
+      ) {
         setIsVisible(false);
       } else {
         setIsVisible(true);
       }
 
-      setLastScrollY(currentScrollY);
+      lastScrollYRef.current = currentScrollY;
     };
 
-    window.addEventListener("scroll", handleScroll);
+    window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [lastScrollY]);
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -101,9 +117,14 @@ export default function Navbar() {
         >
           {/* Logo MEGANTARA */}
           <Link href="/" className="flex items-center gap-2.5 pl-1 pr-2 group">
-            <div className="w-9 h-9 rounded-xl bg-[#0F2C59] flex items-center justify-center shadow-xs">
-              <Cloud className="w-5 h-5 text-white fill-white" />
-            </div>
+            <Image
+              src="/logo-nusantara.png"
+              alt="Logo Nusantara Indonesia"
+              width={800}
+              height={379}
+              priority
+              className="h-10 w-auto object-contain"
+            />
             <div className="flex flex-col">
               <span className="text-sm font-black font-serif tracking-wide text-[#0F2C59]">
                 MEGANTARA
@@ -226,10 +247,43 @@ export default function Navbar() {
           }}
           transition={{ type: "spring", stiffness: 280, damping: 25 }}
         >
-          {[
-            { name: "Beranda", link: "/", icon: Home },
-            { name: "Nusantara", link: "/Nusantara", icon: Compass },
-          ].map((item) => {
+          {/* Panel pilih wilayah untuk layar kecil */}
+          <AnimatePresence>
+            {isMobileRegionsOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 12, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.96 }}
+                transition={{ duration: 0.15 }}
+                className="absolute bottom-full left-0 right-0 mb-3 p-2 rounded-2xl bg-white border border-[#0F2C59]/15 shadow-xl flex flex-col gap-1"
+              >
+                <p className="px-3 py-1 text-[10px] font-mono tracking-widest text-[#335377] uppercase font-bold">
+                  Jelajah 5 Kepulauan
+                </p>
+                {islandQuickLinks.map((island) => {
+                  const IconComponent = island.icon;
+                  return (
+                    <Link
+                      key={island.name}
+                      href={island.link}
+                      onClick={() => setIsMobileRegionsOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#EBF3FA] text-[#0F2C59] text-xs font-semibold transition-colors group"
+                    >
+                      <div className="w-6 h-6 rounded-lg bg-[#EBF3FA] flex items-center justify-center text-[#2563EB] group-hover:bg-[#2563EB] group-hover:text-white transition-colors">
+                        <IconComponent className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-bold group-hover:text-[#2563EB] transition-colors">{island.name}</span>
+                        <span className="text-[10px] text-[#335377]/70">{island.desc}</span>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {mobileNavItems.map((item) => {
             const isActive = item.link === pathname;
             const Icon = item.icon;
 
@@ -260,6 +314,33 @@ export default function Navbar() {
               </Link>
             );
           })}
+
+          <button
+            type="button"
+            onClick={() => setIsMobileRegionsOpen((open) => !open)}
+            aria-expanded={isMobileRegionsOpen}
+            aria-label="Pilih wilayah"
+            className="flex-1 flex justify-center w-full cursor-pointer"
+          >
+            <div
+              className={`relative flex flex-col items-center gap-1 py-1.5 px-4 rounded-xl transition-colors ${
+                isMobileRegionsOpen ? "text-white" : "text-[#0F2C59]/70 hover:text-[#0F2C59]"
+              }`}
+            >
+              {isMobileRegionsOpen && (
+                <motion.div
+                  layoutId="mobileNavActivePillCleanBlue"
+                  className="absolute inset-0 bg-[#0F2C59] rounded-xl -z-10 shadow-sm"
+                  transition={{ type: "spring", bounce: 0.3, duration: 0.5 }}
+                />
+              )}
+
+              <Map size={18} strokeWidth={isMobileRegionsOpen ? 2.5 : 2} />
+              <span className="text-[9px] font-bold uppercase tracking-wider">
+                Wilayah
+              </span>
+            </div>
+          </button>
         </motion.div>
       </nav>
     </>

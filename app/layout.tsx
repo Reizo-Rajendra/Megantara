@@ -1,14 +1,9 @@
 import type { Metadata } from "next";
-import {
-  Plus_Jakarta_Sans,
-  Cormorant_Garamond,
-  Caveat,
-} from "next/font/google";
+import { Plus_Jakarta_Sans, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { TransitionProvider } from "@/components/TransitionContext";
 import LayoutWrapper from "@/components/LayoutWrapper";
 import CloudTransition from "@/components/CloudTransition";
-import { AuthProvider } from "@/contexts/AuthContext";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   variable: "--font-plus-jakarta",
@@ -19,11 +14,6 @@ const cormorantGaramond = Cormorant_Garamond({
   variable: "--font-cormorant",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
-});
-
-const caveat = Caveat({
-  variable: "--font-caveat",
-  subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
@@ -40,16 +30,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="id">
       <body
-        className={`${plusJakartaSans.variable} ${cormorantGaramond.variable} ${caveat.variable} antialiased`}
+        className={`${plusJakartaSans.variable} ${cormorantGaramond.variable} antialiased`}
       >
-        <AuthProvider>
-          <TransitionProvider>
-            <CloudTransition />
-            <LayoutWrapper>{children}</LayoutWrapper>
-          </TransitionProvider>
-        </AuthProvider>
+        <TransitionProvider>
+          <CloudTransition />
+          <LayoutWrapper>{children}</LayoutWrapper>
+        </TransitionProvider>
       </body>
     </html>
   );

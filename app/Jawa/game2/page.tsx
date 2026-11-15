@@ -331,7 +331,7 @@ export default function AngklungGame() {
     startT: number;
     notePtr: number;
     currentSongData: { note: number; time: number }[];
-    fallingNotes: { mesh: THREE.Mesh; noteIndex: number; active: boolean; targetTime: number }[];
+    fallingNotes: { mesh: THREE.Object3D; noteIndex: number; active: boolean; targetTime: number }[];
     angklungModels: THREE.Group[];
     runwayLanes: THREE.Mesh[];
     hitPads: THREE.Mesh[];
@@ -772,7 +772,7 @@ export default function AngklungGame() {
 
     gameDataRef.current.noteGroup.add(noteGroupMesh);
     gameDataRef.current.fallingNotes.push({
-      mesh: noteGroupMesh as any,
+      mesh: noteGroupMesh,
       noteIndex,
       active: true,
       targetTime,

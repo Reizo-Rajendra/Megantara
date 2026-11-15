@@ -32,7 +32,7 @@ export const ResultScreen = ({
 
     {type === "LOSE" && (
       <p className="text-gray-300 mb-8 italic text-lg">
-        "Kegagalan adalah awal dari kebangkitan..."
+        “Kegagalan adalah awal dari kebangkitan...”
       </p>
     )}
 

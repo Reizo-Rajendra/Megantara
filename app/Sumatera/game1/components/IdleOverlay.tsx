@@ -23,7 +23,7 @@ const IdleOverlay: React.FC<IdleOverlayProps> = ({ onStart }) => {
           className="mb-8"
         >
           <div className="w-48 h-48 mx-auto mb-6 bg-[var(--accent)]/10 rounded-full flex items-center justify-center border border-[var(--accent)]/20">
-            <img src="/Sumatera/game1/gadangfull.png" className="w-40 object-contain" alt="Icon" />
+            <img src="/Sumatera/game1/gadangfull.webp" className="w-40 object-contain" alt="Icon" />
           </div>
           <h2 className="text-5xl font-black text-[var(--primary)] mb-4 tracking-tighter italic">ARSITEK MINANG</h2>
           <p className="text-secondary text-lg font-medium leading-relaxed">

@@ -1,750 +1,773 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import * as THREE from "three";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Check, ChefHat, Flame, RotateCcw } from "lucide-react";
+
+type IngredientId = "santan" | "rempah" | "daging";
+type Phase = "adding" | "stirring" | "done" | "burned";
+
+interface Ingredient {
+  id: IngredientId;
+  name: string;
+  emoji: string;
+  hint: string;
+}
+
+const INGREDIENTS: Ingredient[] = [
+  { id: "santan", name: "Santan", emoji: "🥥", hint: "Kelapa parut" },
+  { id: "rempah", name: "Rempah", emoji: "🌿", hint: "Bumbu tradisional" },
+  { id: "daging", name: "Daging", emoji: "🥩", hint: "Potongan daging" },
+];
+
+const ORDER: IngredientId[] = ["santan", "rempah", "daging"];
+
+const MEAT_POSITIONS = [
+  { left: 28, top: 36 },
+  { left: 56, top: 28 },
+  { left: 66, top: 56 },
+  { left: 38, top: 62 },
+  { left: 47, top: 47 },
+];
+
+const STEAM_POSITIONS = [
+  { left: 28, top: 24, delay: "0s" },
+  { left: 48, top: 14, delay: "0.5s" },
+  { left: 68, top: 26, delay: "1s" },
+];
+
+function ingredientName(id: IngredientId) {
+  return INGREDIENTS.find((item) => item.id === id)?.name ?? id;
+}
 
 export default function RendangGame() {
-  const mountRef = useRef<HTMLDivElement>(null);
-  const [currentStep, setCurrentStep] = useState(0);
+  const router = useRouter();
+
+  const [stepIndex, setStepIndex] = useState(0);
+  const [phase, setPhase] = useState<Phase>("adding");
+  const [progress, setProgress] = useState(0);
+  const [burn, setBurn] = useState(0);
+  const [added, setAdded] = useState<IngredientId[]>([]);
+  const [instruction, setInstruction] = useState(
+    "Tarik atau klik <b>Santan</b> ke dalam kuali!",
+  );
+  const [dragging, setDragging] = useState<{
+    id: IngredientId;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [wrongId, setWrongId] = useState<IngredientId | null>(null);
+  const [pouring, setPouring] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
-  const [showProgressBar, setShowProgressBar] = useState(false);
-  const [progressWidth, setProgressWidth] = useState(0);
-  const [instruction, setInstruction] = useState("Tarik <b>Santan</b> ke dalam kuali!");
-  const [showStirLabel, setShowStirLabel] = useState(false);
-  const [burnProgress, setBurnProgress] = useState(0);
+  const [showBurnedModal, setShowBurnedModal] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
 
-  // Refs for "global" variables in the game scope
-  const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const kualiRef = useRef<THREE.Mesh | null>(null);
-  const kualiGroupRef = useRef<THREE.Group | null>(null);
-  const spatulaRef = useRef<THREE.Group | null>(null);
-  const bowlRef = useRef<THREE.Group | null>(null);
-  const fireGroupRef = useRef<THREE.Group | null>(null);
-  const mixMaterialRef = useRef<THREE.MeshStandardMaterial | null>(null);
-  const ingredientMeshesRef = useRef<{ [key: string]: THREE.Mesh }>({});
-  const originalPositionsRef = useRef<{ [key: string]: THREE.Vector3 }>({});
-  const cookedMeatMeshesRef = useRef<THREE.Mesh[]>([]);
-  const fireParticlesRef = useRef<THREE.Mesh[]>([]);
-  const stepRef = useRef(0); // Mutable ref for logic access without re-renders
-  const stirProgressRef = useRef(0);
-  const burnProgressRef = useRef(0);
-  const lastStirTimeRef = useRef(Date.now());
-  const draggedObjectRef = useRef<THREE.Object3D | null>(null);
-  const mouseRef = useRef(new THREE.Vector2());
-  const raycasterRef = useRef(new THREE.Raycaster());
-  const dragPlaneRef = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.5));
-  const animIdRef = useRef<number | null>(null);
-  const intervalIdsRef = useRef<NodeJS.Timeout[]>([]);
+  const stepRef = useRef(0);
+  const phaseRef = useRef<Phase>("adding");
+  const progressRef = useRef(0);
+  const burnRef = useRef(0);
+  const lastStirRef = useRef(0);
+  const stirHeldRef = useRef(false);
+  const wokRef = useRef<HTMLDivElement | null>(null);
+  const dragStartRef = useRef<{
+    x: number;
+    y: number;
+    id: IngredientId;
+  } | null>(null);
+  const movedRef = useRef(false);
+  const finishTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrongTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const steps = ["santan", "rempah", "daging"];
+  const mixColor = useMemo(() => {
+    if (added.includes("daging")) return "#5a2a16";
+    if (added.includes("rempah")) return "#c79a62";
+    if (added.includes("santan")) return "#f1e6cf";
+    return "#3a2a1f";
+  }, [added]);
+
+  const addIngredient = useCallback((id: IngredientId) => {
+    if (phaseRef.current !== "adding") return;
+
+    if (id !== ORDER[stepRef.current]) {
+      setWrongId(id);
+      setInstruction(
+        `Ikuti urutannya dulu: masukkan <b>${ingredientName(
+          ORDER[stepRef.current],
+        )}</b>.`,
+      );
+      if (wrongTimeoutRef.current) clearTimeout(wrongTimeoutRef.current);
+      wrongTimeoutRef.current = setTimeout(() => setWrongId(null), 600);
+      return;
+    }
+
+    setAdded((prev) => [...prev, id]);
+    setWrongId(null);
+
+    const next = stepRef.current + 1;
+    stepRef.current = next;
+    setStepIndex(next);
+
+    if (next < ORDER.length) {
+      setInstruction(
+        `Lanjut! Masukkan <b>${ingredientName(ORDER[next])}</b>.`,
+      );
+    } else {
+      phaseRef.current = "stirring";
+      setPhase("stirring");
+      lastStirRef.current = Date.now();
+      setInstruction("Bagus! Sekarang <b>ADUK</b> sampai asat!");
+    }
+  }, []);
+
+  // Simulasi mengaduk + tingkat gosong.
+  useEffect(() => {
+    if (phase !== "stirring") return;
+
+    const timer = setInterval(() => {
+      const now = Date.now();
+
+      if (stirHeldRef.current) {
+        lastStirRef.current = now;
+        progressRef.current = Math.min(100, progressRef.current + 1.25);
+        burnRef.current = Math.max(0, burnRef.current - 3);
+      } else if (now - lastStirRef.current > 1800) {
+        burnRef.current = Math.min(100, burnRef.current + 1.4);
+      } else {
+        burnRef.current = Math.max(0, burnRef.current - 0.8);
+      }
+
+      setProgress(progressRef.current);
+      setBurn(burnRef.current);
+
+      if (burnRef.current >= 100) {
+        phaseRef.current = "burned";
+        setPhase("burned");
+        setShowBurnedModal(true);
+      } else if (progressRef.current >= 100) {
+        phaseRef.current = "done";
+        setPhase("done");
+        setPouring(true);
+        if (finishTimeoutRef.current) clearTimeout(finishTimeoutRef.current);
+        finishTimeoutRef.current = setTimeout(() => {
+          setPouring(false);
+          setShowFinishModal(true);
+        }, 1400);
+      }
+    }, 100);
+
+    return () => clearInterval(timer);
+  }, [phase]);
 
   useEffect(() => {
-    if (!mountRef.current) return;
-
-    // INIT
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x4a321f);
-    sceneRef.current = scene;
-
-    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(0, 8, 12);
-    camera.lookAt(0, 0, 0);
-    cameraRef.current = camera;
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    mountRef.current.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
-
-    // ENVIRONMENT
-    const tableGeo = new THREE.BoxGeometry(60, 2, 40);
-    const tableMat = new THREE.MeshStandardMaterial({ color: 0x5d3a24, roughness: 0.6 });
-    const counterTop = new THREE.Mesh(tableGeo, tableMat);
-    counterTop.position.y = -2;
-    counterTop.receiveShadow = true;
-    scene.add(counterTop);
-
-    const wallGeo = new THREE.PlaneGeometry(60, 30);
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x3d2b1f });
-    const wall = new THREE.Mesh(wallGeo, wallMat);
-    wall.position.z = -12;
-    wall.position.y = 8;
-    scene.add(wall);
-
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
-
-    const mainLight = new THREE.DirectionalLight(0xfff4e0, 1.0);
-    mainLight.position.set(5, 10, 7);
-    mainLight.castShadow = true;
-    scene.add(mainLight);
-
-    const fireGroup = new THREE.Group();
-    scene.add(fireGroup);
-    fireGroupRef.current = fireGroup;
-    createKitchenFire(fireGroup);
-
-    // KUALI
-    const kualiGroup = new THREE.Group();
-    kualiGroupRef.current = kualiGroup;
-
-    const wokGeo = new THREE.SphereGeometry(2, 32, 16, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
-    const wokMat = new THREE.MeshStandardMaterial({ color: 0x222222, side: THREE.DoubleSide, metalness: 0.7, roughness: 0.3 });
-    const kuali = new THREE.Mesh(wokGeo, wokMat);
-    kuali.position.y = 1;
-    kualiRef.current = kuali;
-    kualiGroup.add(kuali);
-
-    const handleGeo = new THREE.TorusGeometry(0.35, 0.1, 16, 32, Math.PI);
-    const hL = new THREE.Mesh(handleGeo, wokMat);
-    hL.position.set(-1.9, 1.1, 0); hL.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
-    kualiGroup.add(hL);
-    const hR = hL.clone();
-    hR.position.set(1.9, 1.1, 0); hR.rotation.set(-Math.PI / 2, 0, -Math.PI / 2);
-    kualiGroup.add(hR);
-    scene.add(kualiGroup);
-
-    // MIX TEXTURE
-    const mixGeo = new THREE.CircleGeometry(1.85, 32);
-    const mixMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0, roughness: 0.9 });
-    mixMaterialRef.current = mixMaterial;
-    const mix = new THREE.Mesh(mixGeo, mixMaterial);
-    mix.rotation.x = -Math.PI / 2;
-    mix.position.y = 0.45;
-    kualiGroup.add(mix);
-
-    // SPATULA
-    const spatGroup = new THREE.Group();
-    const spatHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 4), new THREE.MeshStandardMaterial({ color: 0x4d3b2f }));
-    spatHandle.position.y = 2;
-    spatGroup.add(spatHandle);
-    const spatHead = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.05), new THREE.MeshStandardMaterial({ color: 0x777777 }));
-    spatHead.rotation.x = Math.PI / 4;
-    spatGroup.add(spatHead);
-    spatulaRef.current = spatGroup;
-    spatGroup.visible = false;
-    scene.add(spatGroup);
-
-    createDecorativeBowl(scene);
-
-    // INGREDIENTS - Responsive positioning
-    const isMobile = window.innerWidth < 768;
-    const loadIngredients = async () => {
-      if (isMobile) {
-        // Mobile: ingredients in front of pot, closer together
-        await createDraggable(scene, "santan", 0xeeeeee, new THREE.Vector3(-2, 0, 4));
-        await createDraggable(scene, "rempah", 0x8b4513, new THREE.Vector3(0, 0, 4.5));
-        await createDraggable(scene, "daging", 0x7c3a23, new THREE.Vector3(2, 0, 4));
-      } else {
-        // Desktop: original spread out positions
-        await createDraggable(scene, "santan", 0xeeeeee, new THREE.Vector3(-6, 0, 2));
-        await createDraggable(scene, "rempah", 0x8b4513, new THREE.Vector3(-4, 0, 4));
-        await createDraggable(scene, "daging", 0x7c3a23, new THREE.Vector3(6, 0, 2));
-      }
-    };
-    loadIngredients();
-
-    // ANIMATION LOOP
-    const animate = () => {
-      animIdRef.current = requestAnimationFrame(animate);
-
-      // Fire
-      fireParticlesRef.current.forEach((p) => {
-        p.position.y += p.userData.speed;
-        p.userData.life -= 0.025;
-        p.scale.multiplyScalar(0.965);
-        // @ts-ignore
-        p.material.opacity = p.userData.life * 0.7;
-        if (p.userData.life <= 0) {
-          p.position.set((Math.random() - 0.5) * 1.8, -0.9, (Math.random() - 0.5) * 1.8);
-          p.userData.life = 1.0;
-          p.scale.set(1, 1, 1);
-        }
-      });
-
-      // Kuali idle
-      if (stepRef.current < 5 && kualiGroupRef.current) {
-        kualiGroupRef.current.rotation.y = Math.sin(Date.now() * 0.0006) * 0.06;
-      } else if (bowlRef.current && stepRef.current === 5) {
-        bowlRef.current.rotation.y += 0.004;
-      }
-
-      renderer.render(scene, camera);
-    };
-    animate();
-
-    const onResize = () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    };
-    window.addEventListener("resize", onResize);
-
     return () => {
-      window.removeEventListener("resize", onResize);
-      if (animIdRef.current) cancelAnimationFrame(animIdRef.current);
-      intervalIdsRef.current.forEach(clearInterval);
-      if (mountRef.current && rendererRef.current) {
-        mountRef.current.removeChild(rendererRef.current.domElement);
-      }
-      rendererRef.current?.dispose();
+      if (finishTimeoutRef.current) clearTimeout(finishTimeoutRef.current);
+      if (wrongTimeoutRef.current) clearTimeout(wrongTimeoutRef.current);
     };
-  }, []); // Only run once on mount
+  }, []);
 
-  // HELPER FUNCTIONS
-  const createKitchenFire = (group: THREE.Group) => {
-    for (let i = 0; i < 25; i++) {
-      const p = new THREE.Mesh(
-        new THREE.SphereGeometry(0.1 + Math.random() * 0.2),
-        new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending })
-      );
-      p.position.set((Math.random() - 0.5) * 1.8, -0.9, (Math.random() - 0.5) * 1.8);
-      p.userData = { speed: 0.03 + Math.random() * 0.05, life: 1.0 };
-      group.add(p);
-      fireParticlesRef.current.push(p);
-    }
+  const resetGame = useCallback(() => {
+    stepRef.current = 0;
+    phaseRef.current = "adding";
+    progressRef.current = 0;
+    burnRef.current = 0;
+    lastStirRef.current = Date.now();
+    stirHeldRef.current = false;
+    dragStartRef.current = null;
+    movedRef.current = false;
+
+    setStepIndex(0);
+    setPhase("adding");
+    setProgress(0);
+    setBurn(0);
+    setAdded([]);
+    setInstruction("Tarik atau klik <b>Santan</b> ke dalam kuali!");
+    setDragging(null);
+    setWrongId(null);
+    setPouring(false);
+    setShowFinishModal(false);
+    setShowBurnedModal(false);
+    setShowDetails(false);
+
+    if (finishTimeoutRef.current) clearTimeout(finishTimeoutRef.current);
+    if (wrongTimeoutRef.current) clearTimeout(wrongTimeoutRef.current);
+  }, []);
+
+  const handleIngredientPointerDown = (
+    event: React.PointerEvent<HTMLButtonElement>,
+    id: IngredientId,
+  ) => {
+    if (phaseRef.current !== "adding") return;
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragStartRef.current = { x: event.clientX, y: event.clientY, id };
+    movedRef.current = false;
+    setDragging({ id, x: event.clientX, y: event.clientY });
   };
 
-  const createDecorativeBowl = (scene: THREE.Scene) => {
-    const bGroup = new THREE.Group();
-    const points = [];
-    points.push(new THREE.Vector2(0, 0));
-    points.push(new THREE.Vector2(0.9, 0.1));
-    points.push(new THREE.Vector2(1.6, 0.8));
-    points.push(new THREE.Vector2(1.9, 1.5));
+  const handleIngredientPointerMove = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    const start = dragStartRef.current;
+    if (!start) return;
 
-    const bGeo = new THREE.LatheGeometry(points, 32);
-    const bMat = new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide, metalness: 0.05, roughness: 0.2 });
-    const bMesh = new THREE.Mesh(bGeo, bMat);
-    bGroup.add(bMesh);
-
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 0.9, 0.2, 32), bMat);
-    base.position.y = -0.1;
-    bGroup.add(base);
-
-    bowlRef.current = bGroup;
-    bGroup.position.set(13, -0.8, -1);
-    scene.add(bGroup);
-  };
-
-  const createDraggable = async (scene: THREE.Scene, type: string, color: number, pos: THREE.Vector3) => {
-    let mesh: THREE.Mesh | THREE.Group;
-
-    // Load GLB models for santan, rempah, and daging
-    const loader = new GLTFLoader();
-    const modelPath = `/model/${type}.glb`;
-
-    try {
-      const gltf = await new Promise<any>((resolve, reject) => {
-        loader.load(modelPath, resolve, undefined, reject);
-      });
-
-      mesh = gltf.scene;
-      mesh.scale.set(0.5, 0.5, 0.5);
-
-      // Make all child meshes interactive
-      mesh.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-          child.userData.type = type;
-        }
-      });
-    } catch (error) {
-      console.error(`Failed to load ${type} model:`, error);
-      // Fallback to geometry if model fails to load
-      let geo;
-      if (type === "santan") geo = new THREE.CylinderGeometry(0.4, 0.4, 1, 16);
-      else if (type === "rempah") geo = new THREE.DodecahedronGeometry(0.35);
-      else geo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
-      mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: color, roughness: 0.5 }));
+    if (
+      Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8
+    ) {
+      movedRef.current = true;
     }
 
-    mesh.position.copy(pos);
-    mesh.userData.type = type;
-    scene.add(mesh);
-    ingredientMeshesRef.current[type] = mesh as THREE.Mesh;
-    originalPositionsRef.current[type] = pos.clone();
+    setDragging({ id: start.id, x: event.clientX, y: event.clientY });
   };
 
-  // INTERACTION HANDLERS
-  const updateMousePos = (clientX: number, clientY: number) => {
-    mouseRef.current.x = (clientX / window.innerWidth) * 2 - 1;
-    mouseRef.current.y = -(clientY / window.innerHeight) * 2 + 1;
-  };
+  const handleIngredientPointerUp = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    const start = dragStartRef.current;
+    if (!start) return;
 
-  const handlePointerDown = (e: React.PointerEvent) => {
-    updateMousePos(e.clientX, e.clientY);
-    raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current!);
-    // Use recursive intersect to hit child meshes in GLB models
-    const hits = raycasterRef.current.intersectObjects(Object.values(ingredientMeshesRef.current), true);
+    dragStartRef.current = null;
+    setDragging(null);
 
-    // Check if the hit object matches the current step
-    if (hits.length > 0) {
-      const hitType = hits[0].object.userData.type;
-      if (hitType === steps[stepRef.current]) {
-        // Store the top-level parent (the ingredient group/mesh)
-        const ingredient = Object.values(ingredientMeshesRef.current).find(obj =>
-          obj === hits[0].object || obj === hits[0].object.parent ||
-          (hits[0].object.parent && obj === hits[0].object.parent.parent)
-        );
-        if (ingredient) draggedObjectRef.current = ingredient;
-      }
-    }
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    updateMousePos(e.clientX, e.clientY);
-
-    // Dragging Logic
-    if (draggedObjectRef.current && cameraRef.current) {
-      raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
-      const p = new THREE.Vector3();
-      raycasterRef.current.ray.intersectPlane(dragPlaneRef.current, p);
-      draggedObjectRef.current.position.copy(p);
+    // Tap / klik tanpa geser tetap bisa memasukkan bahan.
+    if (!movedRef.current) {
+      addIngredient(start.id);
+      return;
     }
 
-    // Stirring Logic
-    if (stepRef.current === 3 && spatulaRef.current) {
-      spatulaRef.current.position.set(mouseRef.current.x * 5, 0.7 + Math.sin(Date.now() * 0.01) * 0.2, -mouseRef.current.y * 5);
-      spatulaRef.current.rotation.y += 0.2;
+    const wok = wokRef.current;
+    if (wok) {
+      const rect = wok.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const radius = Math.min(rect.width, rect.height) * 0.54;
 
-      // If mouse is near center, increase progress and reset burn timer
-      if (Math.abs(mouseRef.current.x) < 0.6 && Math.abs(mouseRef.current.y) < 0.6) {
-        stirProgressRef.current += 0.5;
-        if (stirProgressRef.current > 100) stirProgressRef.current = 100;
-        lastStirTimeRef.current = Date.now();
-        burnProgressRef.current = 0;
-        updateStirVisuals();
-      }
-    }
-  };
-
-  const handlePointerUp = () => {
-    if (!draggedObjectRef.current) return;
-
-    if (draggedObjectRef.current.position.distanceTo(new THREE.Vector3(0, 0, 0)) < 2.5) {
-      addIngredientToPot(draggedObjectRef.current.userData.type);
-    } else {
-      draggedObjectRef.current.position.copy(originalPositionsRef.current[draggedObjectRef.current.userData.type]);
-    }
-    draggedObjectRef.current = null;
-  };
-
-  const addIngredientToPot = (type: string) => {
-    const m = ingredientMeshesRef.current[type];
-    const mixMat = mixMaterialRef.current;
-
-    if (type === "santan") {
-      if (mixMat) { mixMat.opacity = 0.8; mixMat.color.set(0xffffff); }
-      sceneRef.current?.remove(m);
-    } else if (type === "rempah") {
-      if (mixMat) mixMat.color.lerp(new THREE.Color(0xd2b48c), 0.5);
-      sceneRef.current?.remove(m);
-    } else if (type === "daging") {
-      m.position.set(0, 0.4, 0);
-      m.scale.set(0.6, 0.6, 0.6);
-
-      // Set initial brown color for meat (override the red/pink from model)
-      m.traverse((child) => {
-        if (child instanceof THREE.Mesh && child.material) {
-          const mat = Array.isArray(child.material) ? child.material[0] : child.material;
-          if (mat && 'color' in mat) {
-            (mat as any).color.set(0x8B4513); // Saddle brown color
-          }
-        }
-      });
-
-      kualiRef.current?.parent?.add(m);
-      cookedMeatMeshesRef.current.push(m);
-      // add variations
-      for (let i = 0; i < 4; i++) {
-        const c = m.clone();
-        c.position.set((Math.random() - 0.5) * 1.8, 0.4, (Math.random() - 0.5) * 1.8);
-        c.rotation.set(Math.random(), Math.random(), Math.random());
-
-        // Set brown color for clones too
-        c.traverse((child) => {
-          if (child instanceof THREE.Mesh && child.material) {
-            const mat = Array.isArray(child.material) ? child.material[0] : child.material;
-            if (mat && 'color' in mat) {
-              (mat as any).color.set(0x8B4513);
-            }
-          }
-        });
-
-        kualiRef.current?.parent?.add(c);
-        cookedMeatMeshesRef.current.push(c);
-      }
-    }
-
-    delete ingredientMeshesRef.current[type];
-
-    // Update State for UI
-    const nextStepIndex = stepRef.current + 1;
-    stepRef.current = nextStepIndex;
-    setCurrentStep(nextStepIndex);
-
-    if (nextStepIndex < 3) {
-      const next = steps[nextStepIndex];
-      setInstruction(`Lanjut! Masukkan <b>${next.charAt(0).toUpperCase() + next.slice(1)}</b>.`);
-    } else {
-      setInstruction("Bagus! Sekarang <b>ADUK</b> sampai asat!");
-      setShowProgressBar(true);
-      setShowStirLabel(true);
-      if (spatulaRef.current) spatulaRef.current.visible = true;
-    }
-
-    burstSteam(8);
-  };
-
-  const updateStirVisuals = () => {
-    const prog = stirProgressRef.current;
-    setProgressWidth(prog);
-
-    // Check for burning
-    const timeSinceLastStir = Date.now() - lastStirTimeRef.current;
-    if (timeSinceLastStir > 2000) {
-      burnProgressRef.current += 1;
-      setBurnProgress(burnProgressRef.current);
-
-      if (burnProgressRef.current >= 100) {
-        handleBurnedFood();
+      if (
+        Math.hypot(event.clientX - centerX, event.clientY - centerY) <=
+        radius
+      ) {
+        addIngredient(start.id);
         return;
       }
-    } else {
-      // Reset burn if stirring
-      if (burnProgressRef.current > 0) {
-        burnProgressRef.current = Math.max(0, burnProgressRef.current - 2);
-        setBurnProgress(burnProgressRef.current);
-      }
     }
 
-    // Darken the mixture
-    if (mixMaterialRef.current) {
-      mixMaterialRef.current.color.lerp(new THREE.Color(0x321605), 0.02);
-    }
-
-    // Darken meat pieces progressively as cooking progresses
-    cookedMeatMeshesRef.current.forEach((m) => {
-      if (m instanceof THREE.Mesh && m.material) {
-        const mat = Array.isArray(m.material) ? m.material[0] : m.material;
-        if (mat && 'color' in mat && mat.color instanceof THREE.Color) {
-          // Darken more based on progress
-          const targetColor = new THREE.Color(0x1a0800); // Very dark brown
-          (mat.color as THREE.Color).lerp(targetColor, 0.03);
-        }
-      }
-      // Animate position
-      m.position.y = 0.4 + Math.sin(Date.now() * 0.015 + m.id) * 0.06;
-    });
-
-    if (Math.random() < 0.15) burstSteam(1);
-    if (prog >= 100 && stepRef.current === 3) {
-      startPouringAnimation();
-    }
-  };
-
-  const burstSteam = (n: number) => {
-    for (let i = 0; i < n; i++) {
-      const s = new THREE.Mesh(
-        new THREE.SphereGeometry(0.1 + Math.random() * 0.15),
-        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2 })
+    if (phaseRef.current === "adding") {
+      setInstruction(
+        `Tarik atau klik <b>${ingredientName(
+          ORDER[stepRef.current],
+        )}</b> ke dalam kuali!`,
       );
-      s.position.set((Math.random() - 0.5) * 3.5, 1.2, (Math.random() - 0.5) * 3.5);
-      sceneRef.current?.add(s);
-
-      let l = 0;
-      const id = setInterval(() => {
-        s.position.y += 0.08;
-        s.scale.multiplyScalar(1.03);
-        // @ts-ignore
-        s.material.opacity -= 0.01;
-        if (++l > 30) {
-          clearInterval(id);
-          sceneRef.current?.remove(s);
-        }
-      }, 30);
-      intervalIdsRef.current.push(id); // track to clear on unmount
     }
   };
 
-  const startPouringAnimation = () => {
-    stepRef.current = 5; // Prevent re-trigger
-    setCurrentStep(5); // UI update
-    if (spatulaRef.current) spatulaRef.current.visible = false;
-
-    let p = 0;
-    const anim = setInterval(() => {
-      if (!kualiGroupRef.current) return;
-      p += 0.012;
-
-      if (p < 0.4) {
-        kualiGroupRef.current.position.x += 0.32;
-        kualiGroupRef.current.position.y += 0.08;
-      } else if (p < 0.75) {
-        kualiGroupRef.current.rotation.z -= 0.05;
-        if (Math.random() > 0.6) dropRendangParticle();
-      } else if (p < 1.0) {
-        kualiGroupRef.current.rotation.z += 0.05;
-        kualiGroupRef.current.position.x -= 0.32;
-        kualiGroupRef.current.position.y -= 0.08;
-        if (p > 0.98) {
-          kualiGroupRef.current.rotation.z = 0;
-          kualiGroupRef.current.position.set(0, 0, 0);
-        }
-      }
-      if (p >= 1.0) {
-        clearInterval(anim);
-        showFinalResult();
-      }
-    }, 20);
-    intervalIdsRef.current.push(anim);
+  const cancelDrag = () => {
+    dragStartRef.current = null;
+    setDragging(null);
   };
 
-  const dropRendangParticle = () => {
-    if (!kualiGroupRef.current) return;
-    const d = new THREE.Mesh(new THREE.SphereGeometry(0.18), new THREE.MeshBasicMaterial({ color: 0x321605 }));
-    d.position.set(kualiGroupRef.current.position.x + 0.5, kualiGroupRef.current.position.y + 1, 0);
-    sceneRef.current?.add(d);
-
-    let l = 0;
-    const a = setInterval(() => {
-      d.position.y -= 0.18;
-      d.position.x += 0.05;
-      if (++l > 15) {
-        clearInterval(a);
-        sceneRef.current?.remove(d);
-      }
-    }, 20);
-    intervalIdsRef.current.push(a);
+  const startStir = () => {
+    if (phaseRef.current !== "stirring") return;
+    stirHeldRef.current = true;
+    lastStirRef.current = Date.now();
   };
 
-  const handleBurnedFood = () => {
-    stepRef.current = 6; // Special state for burned
-    setCurrentStep(6);
-    if (spatulaRef.current) spatulaRef.current.visible = false;
-    setInstruction("<b>OH NO!</b> Rendangnya gosong! Coba lagi.");
-    setTimeout(() => {
-      window.location.reload();
-    }, 3000);
+  const stopStir = () => {
+    stirHeldRef.current = false;
   };
 
-  const showFinalResult = () => {
-    // MOVE RENDANG TO BOWL
-    const sMix = new THREE.Mesh(new THREE.CircleGeometry(1.6, 32), new THREE.MeshStandardMaterial({ color: 0x321605 }));
-    sMix.rotation.x = -Math.PI / 2;
-    sMix.position.y = 1.0;
-    bowlRef.current?.add(sMix);
-
-    cookedMeatMeshesRef.current.forEach((m) => {
-      const mc = m.clone();
-      mc.position.set((Math.random() - 0.5) * 1.2, 1.15, (Math.random() - 0.5) * 1.2);
-      mc.scale.set(0.5, 0.5, 0.5);
-      bowlRef.current?.add(mc);
-      m.visible = false;
-    });
-    if (mixMaterialRef.current) mixMaterialRef.current.visible = false;
-
-    // CAMERA ANIMATION
-    const camTarget = new THREE.Vector3(13, 1, -1);
-    const camPos = new THREE.Vector3(13, 5, 5);
-
-    let p = 0;
-    const camAnim = setInterval(() => {
-      if (!cameraRef.current) return;
-      p += 0.02;
-      cameraRef.current.position.lerp(camPos, 0.12);
-      cameraRef.current.lookAt(camTarget);
-      if (p >= 1.2) {
-        clearInterval(camAnim);
-        setShowFinishModal(true);
-      }
-    }, 20);
-    intervalIdsRef.current.push(camAnim);
-  };
-
-  const reloadGame = () => {
-    window.location.reload();
-  };
-
-  const isCooking = stepRef.current >= 4;
+  const currentIngredient = ORDER[stepIndex];
+  const isStirring = phase === "stirring";
 
   return (
-    <div className="relative w-full h-screen bg-[#2c1a10] overflow-hidden font-sans touch-none">
-      {/* 3D Container */}
-      <div
-        ref={mountRef}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        className="w-full h-full relative z-0"
-      />
+    <div className="relative min-h-screen w-full overflow-hidden bg-[#1d1009] font-sans text-white">
+      <style>{`
+        @keyframes rendang-shake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-6px); }
+          75% { transform: translateX(6px); }
+        }
+        @keyframes rendang-flame {
+          0% { transform: scaleY(0.8) translateY(2px); opacity: 0.75; }
+          100% { transform: scaleY(1.15) translateY(-3px); opacity: 1; }
+        }
+        @keyframes rendang-steam {
+          0% { transform: translateY(0) scale(0.8); opacity: 0; }
+          25% { opacity: 0.45; }
+          100% { transform: translateY(-70px) scale(1.5); opacity: 0; }
+        }
+        @keyframes rendang-spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
 
-      {/* UI Layer - Top on Mobile, Left on Desktop */}
-      {!showFinishModal && currentStep < 5 && (
-        <>
-          {/* Mobile UI - Top */}
-          <div className="md:hidden absolute top-0 left-0 right-0 pointer-events-none flex justify-center p-3 z-10">
-            <div className="bg-orange-900/95 backdrop-blur-sm p-3 pointer-events-auto rounded-lg max-w-full">
-              <h1 className="text-base font-bold mb-2 text-yellow-400 text-center">Dapur Tradisi Minang</h1>
+      {/* Latar dapur hangat */}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(234,88,12,0.18),transparent_55%),radial-gradient(circle_at_82%_82%,rgba(217,119,6,0.12),transparent_45%)]" />
+      <div className="pointer-events-none absolute inset-0 opacity-[0.04] [background-image:linear-gradient(rgba(255,255,255,0.8)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.8)_1px,transparent_1px)] [background-size:48px_48px]" />
 
-              <div className="flex gap-2 mb-2 justify-center">
-                {steps.map((s, idx) => (
-                  <div
-                    key={s}
-                    className={`flex items-center gap-1 px-2 py-1 transition-all ${idx === currentStep ? "bg-yellow-500/20 border-2 border-yellow-500" :
-                      idx < currentStep ? "opacity-50" : "opacity-30"
-                      }`}
-                  >
-                    <span className="text-lg">
-                      {s === 'santan' ? '🥥' : s === 'rempah' ? '🌿' : '🥩'}
+      <header className="relative z-30 flex items-center justify-between gap-3 px-4 py-4 md:px-8">
+        <button
+          type="button"
+          onClick={() => router.push("/Sumatera")}
+          className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-bold text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Kembali
+        </button>
+
+        <div className="flex min-w-0 items-center gap-2">
+          <ChefHat className="h-5 w-5 shrink-0 text-yellow-400" />
+          <h1 className="truncate text-base font-black tracking-tight text-yellow-400 md:text-2xl">
+            Dapur Tradisi Minang
+          </h1>
+        </div>
+
+        <div className="hidden items-center gap-2 text-xs font-semibold text-white/50 md:flex">
+          <Flame className="h-4 w-4 text-orange-400" />
+          Rendang
+        </div>
+      </header>
+
+      <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 pb-10 md:flex-row md:items-start md:justify-center md:gap-8 md:px-8">
+        {/* Panel langkah & instruksi */}
+        <section className="w-full rounded-3xl border border-yellow-500/20 bg-[#3a2114]/85 p-4 backdrop-blur md:sticky md:top-6 md:w-72 md:p-5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-yellow-500/80">
+            Langkah Memasak
+          </p>
+
+          <div className="mt-3 space-y-2">
+            {INGREDIENTS.map((ingredient, index) => {
+              const isDone = added.includes(ingredient.id);
+              const isCurrent =
+                phase === "adding" && currentIngredient === ingredient.id;
+
+              return (
+                <div
+                  key={ingredient.id}
+                  className={`flex items-center gap-3 rounded-xl border px-3 py-2 transition-all duration-200 ${
+                    isDone
+                      ? "border-emerald-500/30 bg-emerald-500/10 opacity-70"
+                      : isCurrent
+                        ? "border-yellow-400/60 bg-yellow-500/10"
+                        : "border-white/10 bg-white/5 opacity-60"
+                  }`}
+                >
+                  <span className="text-xl">{ingredient.emoji}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold capitalize">
+                      {ingredient.name}
+                    </p>
+                    <p className="text-[10px] text-white/45">
+                      {ingredient.hint}
+                    </p>
+                  </div>
+                  {isDone ? (
+                    <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                  ) : (
+                    <span className="text-[10px] font-mono text-white/30">
+                      0{index + 1}
                     </span>
-                  </div>
-                ))}
-              </div>
-
-              <p className="text-white text-[10px] text-center" dangerouslySetInnerHTML={{ __html: instruction }} />
-
-              {showProgressBar && (
-                <>
-                  <div className="w-full bg-orange-950 h-2 overflow-hidden mb-1 mt-2">
-                    <div
-                      className="h-full bg-yellow-500 transition-all duration-100"
-                      style={{ width: `${progressWidth}%` }}
-                    />
-                  </div>
-                  {burnProgress > 0 && (
-                    <div className="w-full bg-red-950 h-1.5 overflow-hidden">
-                      <div
-                        className="h-full bg-red-600 transition-all duration-100"
-                        style={{ width: `${burnProgress}%` }}
-                      />
-                    </div>
                   )}
-                </>
-              )}
+                </div>
+              );
+            })}
 
-              {showStirLabel && (
-                <p className="mt-2 text-yellow-300 font-bold animate-pulse text-[9px] text-center">
-                  Gunakan jari untuk mengaduk!
-                </p>
+            <div
+              className={`flex items-center gap-3 rounded-xl border px-3 py-2 transition-all duration-200 ${
+                isStirring || phase === "done"
+                  ? "border-yellow-400/60 bg-yellow-500/10"
+                  : "border-white/10 bg-white/5 opacity-60"
+              }`}
+            >
+              <span className="text-xl">🥄</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold">Aduk</p>
+                <p className="text-[10px] text-white/45">Hingga asat</p>
+              </div>
+              {phase === "done" && (
+                <Check className="h-4 w-4 shrink-0 text-emerald-400" />
               )}
             </div>
           </div>
 
-          {/* Desktop UI - Left Side */}
-          <div className="hidden md:flex absolute top-0 left-0 h-full pointer-events-none items-center p-6 z-10">
-            <div className="bg-orange-900/90 backdrop-blur-sm p-6 pointer-events-auto max-w-xs">
-              <h1 className="text-2xl font-bold mb-4 text-yellow-400">Dapur Tradisi Minang</h1>
+          <div className="mt-4 rounded-2xl bg-black/25 p-3">
+            <p
+              className="text-sm leading-relaxed text-white/85"
+              aria-live="polite"
+              dangerouslySetInnerHTML={{ __html: instruction }}
+            />
+          </div>
 
-              <div className="space-y-3 mb-4">
-                {steps.map((s, idx) => (
+          {(isStirring || phase === "done") && (
+            <div className="mt-4 space-y-3">
+              <div>
+                <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-white/50">
+                  <span>Kematangan</span>
+                  <span>{Math.round(progress)}%</span>
+                </div>
+                <div className="mt-1 h-2 overflow-hidden rounded-full bg-black/40">
                   <div
-                    key={s}
-                    className={`flex items-center gap-3 p-2 transition-all ${idx === currentStep ? "bg-yellow-500/20 border-l-4 border-yellow-500" :
-                      idx < currentStep ? "opacity-50" : "opacity-30"
-                      }`}
-                  >
-                    <span className="text-2xl">
-                      {s === 'santan' ? '🥥' : s === 'rempah' ? '🌿' : '🥩'}
-                    </span>
-                    <span className="text-white font-medium capitalize">{s}</span>
-                  </div>
-                ))}
+                    className="h-full rounded-full bg-gradient-to-r from-yellow-500 to-orange-500 transition-[width] duration-100"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
               </div>
 
-              <p className="text-white text-sm mb-4" dangerouslySetInnerHTML={{ __html: instruction }} />
+              <div>
+                <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-white/50">
+                  <span>Gosong</span>
+                  <span>{Math.round(burn)}%</span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-black/40">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-red-500 to-red-700 transition-[width] duration-100"
+                    style={{ width: `${burn}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
-              {showProgressBar && (
-                <>
-                  <div className="w-full bg-orange-950 h-3 overflow-hidden mb-2">
-                    <div
-                      className="h-full bg-yellow-500 transition-all duration-100"
-                      style={{ width: `${progressWidth}%` }}
+          {isStirring && (
+            <p className="mt-3 animate-pulse text-center text-xs font-bold text-yellow-300">
+              Tahan & gerakkan di kuali untuk mengaduk!
+            </p>
+          )}
+        </section>
+
+        {/* Panggung kuali */}
+        <section className="flex flex-1 flex-col items-center justify-center py-2">
+          <div className="relative w-full max-w-[380px]">
+            {/* Api */}
+            <div className="pointer-events-none absolute -bottom-3 left-1/2 flex -translate-x-1/2 items-end gap-1.5">
+              {Array.from({ length: 7 }).map((_, index) => (
+                <span
+                  key={index}
+                  className="h-10 w-4 origin-bottom rounded-full bg-gradient-to-t from-orange-700 via-orange-500 to-yellow-300 blur-[0.3px]"
+                  style={{
+                    animation: `rendang-flame ${
+                      0.45 + index * 0.07
+                    }s ease-in-out infinite alternate`,
+                    animationDelay: `${index * 0.08}s`,
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Kuali */}
+            <div
+              ref={wokRef}
+              className="relative aspect-square w-full rounded-full"
+              style={{
+                transform: pouring ? "rotate(-18deg) translateY(-6px)" : undefined,
+                transition: "transform 0.8s ease",
+              }}
+            >
+              {/* Badan kuali */}
+              <div className="absolute inset-0 rounded-full border-[10px] border-[#1a1a1a] bg-gradient-to-b from-[#4a4a4a] via-[#262626] to-[#0a0a0a] shadow-[inset_0_20px_60px_rgba(0,0,0,0.9),0_24px_50px_rgba(0,0,0,0.55)]" />
+              <div className="absolute inset-[8%] rounded-full bg-gradient-to-b from-[#141414] to-[#2a2a2a] shadow-[inset_0_10px_30px_rgba(0,0,0,0.9)]" />
+
+              {/* Isi rendang */}
+              <div
+                className="absolute inset-[16%] overflow-hidden rounded-full transition-colors duration-700"
+                style={{
+                  backgroundColor: mixColor,
+                  opacity: added.length > 0 ? 1 : 0.35,
+                }}
+              >
+                <div
+                  className="absolute inset-0 rounded-full transition-colors duration-300"
+                  style={{
+                    backgroundColor: `rgba(20, 6, 0, ${Math.min(
+                      0.78,
+                      progress / 160,
+                    )})`,
+                  }}
+                />
+
+                {added.includes("daging") &&
+                  MEAT_POSITIONS.map((position, index) => (
+                    <span
+                      key={index}
+                      className="absolute h-4 w-4 rounded-full bg-[#4a1f10] shadow-[inset_0_-2px_3px_rgba(0,0,0,0.6)]"
+                      style={{
+                        left: `${position.left}%`,
+                        top: `${position.top}%`,
+                      }}
                     />
-                  </div>
-                  {burnProgress > 0 && (
-                    <div className="w-full bg-red-950 h-2 overflow-hidden">
-                      <div
-                        className="h-full bg-red-600 transition-all duration-100"
-                        style={{ width: `${burnProgress}%` }}
-                      />
-                    </div>
-                  )}
-                </>
+                  ))}
+
+                {isStirring && (
+                  <div
+                    className="absolute inset-[6%] rounded-full border-4 border-dashed border-white/20"
+                    style={{ animation: "rendang-spin 3s linear infinite" }}
+                  />
+                )}
+              </div>
+
+              {/* Uap */}
+              {added.length > 0 && (
+                <div className="pointer-events-none absolute inset-[12%]">
+                  {STEAM_POSITIONS.map((position, index) => (
+                    <span
+                      key={index}
+                      className="absolute h-8 w-8 rounded-full bg-white/25 blur-md"
+                      style={{
+                        left: `${position.left}%`,
+                        top: `${position.top}%`,
+                        animation: "rendang-steam 2.4s ease-out infinite",
+                        animationDelay: position.delay,
+                      }}
+                    />
+                  ))}
+                </div>
               )}
 
-              {showStirLabel && (
-                <p className="mt-4 text-yellow-300 font-bold animate-pulse text-xs">
-                  Gunakan jari/mouse untuk mengaduk!
-                </p>
+              {/* Pegangan kuali */}
+              <div className="absolute -left-8 top-1/2 h-5 w-10 -translate-y-1/2 rounded-l-full bg-[#2a2a2a] shadow-lg" />
+              <div className="absolute -right-8 top-1/2 h-5 w-10 -translate-y-1/2 rounded-r-full bg-[#2a2a2a] shadow-lg" />
+
+              {/* Area mengaduk */}
+              {isStirring && (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Tahan untuk mengaduk rendang"
+                  className="absolute inset-[14%] z-20 cursor-grab touch-none rounded-full outline-none ring-yellow-300/60 focus-visible:ring-4 active:cursor-grabbing"
+                  onPointerDown={(event) => {
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    startStir();
+                  }}
+                  onPointerUp={stopStir}
+                  onPointerCancel={stopStir}
+                  onPointerLeave={stopStir}
+                  onKeyDown={(event) => {
+                    if (event.key === " " || event.key === "Enter") {
+                      event.preventDefault();
+                      startStir();
+                    }
+                  }}
+                  onKeyUp={stopStir}
+                  onBlur={stopStir}
+                />
               )}
             </div>
           </div>
-        </>
+
+          <p className="mt-7 max-w-sm text-center text-xs leading-relaxed text-white/50">
+            {phase === "adding"
+              ? "Tarik kartu bahan ke kuali, atau klik kartunya langsung."
+              : phase === "stirring"
+                ? "Jangan berhenti mengaduk agar rendang tidak gosong."
+                : phase === "done"
+                  ? "Rendang siap disajikan!"
+                  : "Rendang gosong. Coba lagi!"}
+          </p>
+        </section>
+
+        {/* Kartu bahan */}
+        <section className="w-full md:w-56 md:shrink-0">
+          <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-yellow-500/80">
+            Bahan-bahan
+          </p>
+
+          <div className="flex gap-3 md:flex-col">
+            {INGREDIENTS.map((ingredient) => {
+              const isDone = added.includes(ingredient.id);
+              const isCurrent =
+                phase === "adding" && currentIngredient === ingredient.id;
+              const isWrong = wrongId === ingredient.id;
+
+              return (
+                <button
+                  key={ingredient.id}
+                  type="button"
+                  disabled={phase !== "adding" || isDone}
+                  onPointerDown={(event) =>
+                    handleIngredientPointerDown(event, ingredient.id)
+                  }
+                  onPointerMove={handleIngredientPointerMove}
+                  onPointerUp={handleIngredientPointerUp}
+                  onPointerCancel={cancelDrag}
+                  aria-label={`Masukkan ${ingredient.name}`}
+                  className={`group relative flex min-w-0 flex-1 touch-none select-none items-center gap-3 rounded-2xl border-2 p-3 text-left transition-all duration-200 md:w-full md:flex-none ${
+                    isDone
+                      ? "border-emerald-500/30 bg-emerald-500/10 opacity-50"
+                      : isCurrent
+                        ? "border-yellow-400/70 bg-yellow-500/15 shadow-[0_0_28px_rgba(234,179,8,0.22)] hover:bg-yellow-500/20"
+                        : "border-white/10 bg-white/5 opacity-70 hover:opacity-100"
+                  } ${isWrong ? "border-red-500" : ""}`}
+                  style={{
+                    animation: isWrong
+                      ? "rendang-shake 0.4s ease-in-out"
+                      : undefined,
+                  }}
+                >
+                  <span
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-2xl transition-transform duration-200 ${
+                      isCurrent ? "scale-110 bg-black/20" : "bg-black/20"
+                    }`}
+                  >
+                    {ingredient.emoji}
+                  </span>
+
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-bold">
+                      {ingredient.name}
+                    </span>
+                    <span className="hidden text-[10px] text-white/45 md:block">
+                      {isDone ? "Sudah dimasukkan" : ingredient.hint}
+                    </span>
+                  </span>
+
+                  {isDone && (
+                    <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      </main>
+
+      {/* Bayangan saat drag */}
+      {dragging && (
+        <div
+          className="pointer-events-none fixed z-50 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-yellow-400 bg-[#3a2114]/95 text-3xl shadow-2xl"
+          style={{ left: dragging.x, top: dragging.y }}
+        >
+          {INGREDIENTS.find((item) => item.id === dragging.id)?.emoji}
+        </div>
       )}
 
-      {/* Finish Modal - Collapsible Details */}
+      {/* Modal selesai */}
       {showFinishModal && (
-        <div className="fixed inset-0 flex items-start justify-start z-50 bg-black/60 p-4 md:p-8 pb-24 md:pb-8">
-          <div className="bg-orange-900 p-6 md:p-8 max-w-lg w-full text-white max-h-[calc(100vh-120px)] md:max-h-[90vh] overflow-y-auto">
-            <h2 className="text-3xl md:text-4xl font-black mb-3 md:mb-4 text-yellow-400">SELESAI!</h2>
-            <p className="text-lg md:text-xl mb-4 opacity-90">Rendang telah tersaji sempurna.</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-yellow-500/30 bg-[#3a2114] p-6 text-white shadow-2xl md:p-8">
+            <div className="mb-4 flex items-center gap-3">
+              <span className="text-4xl">🍛</span>
+              <div>
+                <h2 className="text-3xl font-black text-yellow-400">
+                  SELESAI!
+                </h2>
+                <p className="text-sm text-white/70">
+                  Rendang telah tersaji sempurna.
+                </p>
+              </div>
+            </div>
 
-            {/* Toggle Button */}
             <button
-              onClick={() => setShowDetails(!showDetails)}
-              className="w-full mb-4 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 font-bold py-2 px-4 transition-colors text-sm flex items-center justify-between"
               type="button"
+              onClick={() => setShowDetails(!showDetails)}
+              className="mb-4 flex w-full items-center justify-between bg-yellow-500/15 px-4 py-2 text-sm font-bold text-yellow-400 transition-colors hover:bg-yellow-500/25"
             >
-              <span>{showDetails ? 'Sembunyikan Detail' : 'Lihat Sejarah & Filosofi'}</span>
-              <span>{showDetails ? '▲' : '▼'}</span>
+              <span>
+                {showDetails
+                  ? "Sembunyikan Detail"
+                  : "Lihat Sejarah & Filosofi"}
+              </span>
+              <span>{showDetails ? "▲" : "▼"}</span>
             </button>
 
-            {/* Collapsible Content */}
             {showDetails && (
-              <div className="space-y-4 md:space-y-6 text-xs md:text-sm leading-relaxed opacity-90 text-left mb-4">
+              <div className="mb-4 space-y-4 text-left text-xs leading-relaxed text-white/80 md:text-sm">
                 <div>
-                  <h3 className="text-base md:text-lg font-bold text-yellow-400 mb-2">Sejarah Rendang</h3>
+                  <h3 className="mb-2 text-base font-bold text-yellow-400 md:text-lg">
+                    Sejarah Rendang
+                  </h3>
                   <p>
                     Rendang berasal dari <b>Minangkabau</b>, Sumatera Barat.
-                    Masakan ini lahir dari kebutuhan masyarakat Minang untuk membawa bekal
-                    yang tahan lama saat merantau.
+                    Masakan ini lahir dari kebutuhan masyarakat Minang untuk
+                    membawa bekal yang tahan lama saat merantau.
                   </p>
                 </div>
 
                 <div>
-                  <h3 className="text-base md:text-lg font-bold text-yellow-400 mb-2">Filosofi 4 Unsur</h3>
-                  <ul className="space-y-1.5 md:space-y-2 pl-4">
-                    <li><b>• Daging:</b> Simbol niniak mamak (pemimpin adat)</li>
-                    <li><b>• Santan:</b> Simbol cadiak pandai (kaum intelektual)</li>
-                    <li><b>• Cabai:</b> Simbol alim ulama (pemuka agama)</li>
-                    <li><b>• Bumbu rempah:</b> Simbol masyarakat Minang</li>
+                  <h3 className="mb-2 text-base font-bold text-yellow-400 md:text-lg">
+                    Filosofi 4 Unsur
+                  </h3>
+                  <ul className="space-y-1.5 pl-4 md:space-y-2">
+                    <li>
+                      <b>• Daging:</b> Simbol niniak mamak (pemimpin adat)
+                    </li>
+                    <li>
+                      <b>• Santan:</b> Simbol cadiak pandai (kaum intelektual)
+                    </li>
+                    <li>
+                      <b>• Cabai:</b> Simbol alim ulama (pemuka agama)
+                    </li>
+                    <li>
+                      <b>• Bumbu rempah:</b> Simbol masyarakat Minang
+                    </li>
                   </ul>
                 </div>
 
                 <div>
-                  <h3 className="text-base md:text-lg font-bold text-yellow-400 mb-2">Pengakuan Dunia</h3>
+                  <h3 className="mb-2 text-base font-bold text-yellow-400 md:text-lg">
+                    Pengakuan Dunia
+                  </h3>
                   <p>
-                    Pada tahun 2011, CNN International memilih rendang sebagai
-                    <b> makanan paling enak di dunia</b>.
+                    Pada tahun 2011, CNN International memilih rendang sebagai{" "}
+                    <b>makanan paling enak di dunia</b>.
                   </p>
                 </div>
               </div>
             )}
 
-            <button
-              onClick={() => window.location.reload()}
-              className="w-full bg-yellow-500 hover:bg-yellow-400 text-orange-950 font-bold py-3 md:py-4 px-6 transition-colors text-base md:text-lg"
-              type="button"
-            >
-              Masak Lagi
-            </button>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={resetGame}
+                className="flex flex-1 items-center justify-center gap-2 bg-yellow-500 px-5 py-3 text-sm font-bold text-orange-950 transition-colors hover:bg-yellow-400"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Masak Lagi
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/Sumatera")}
+                className="flex flex-1 items-center justify-center gap-2 border border-white/15 bg-white/5 px-5 py-3 text-sm font-bold text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Kembali ke Sumatera
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal gosong */}
+      {showBurnedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl border border-red-500/30 bg-[#3a2114] p-6 text-center text-white shadow-2xl md:p-8">
+            <span className="text-5xl">🔥</span>
+            <h2 className="mt-3 text-3xl font-black text-red-400">GOSONG!</h2>
+            <p className="mt-2 text-sm leading-relaxed text-white/70">
+              Rendangnya terlalu lama didiamkan. Aduk terus agar tidak gosong.
+            </p>
+
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={resetGame}
+                className="flex flex-1 items-center justify-center gap-2 bg-red-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-red-400"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Coba Lagi
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/Sumatera")}
+                className="flex flex-1 items-center justify-center gap-2 border border-white/15 bg-white/5 px-5 py-3 text-sm font-bold text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Kembali
+              </button>
+            </div>
           </div>
         </div>
       )}

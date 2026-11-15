@@ -40,12 +40,25 @@ export default function KalimantanOnboarding() {
   const modelsRef = useRef<{ [key: string]: THREE.Group }>({});
   const animationFrameRef = useRef<number | null>(null);
   const timeRef = useRef<number>(0);
+  const isMobileRef = useRef(false);
+  const activeGameIndexRef = useRef(0);
+
   useEffect(() => {
-    // Mobile check
+    isMobileRef.current = isMobile;
+  }, [isMobile]);
+
+  useEffect(() => {
+    activeGameIndexRef.current = activeGameIndex;
+  }, [activeGameIndex]);
+
+  useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
+  useEffect(() => {
     if (step !== 1 || !mountRef.current) return;
 
     // --- SETUP SCENE ---
@@ -63,7 +76,7 @@ export default function KalimantanOnboarding() {
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -116,7 +129,8 @@ export default function KalimantanOnboarding() {
             if (id === "egrang" && c.material) {
               const mat = Array.isArray(c.material) ? c.material : [c.material];
               mat.forEach((m) => {
-                if ("color" in m) (m as any).color.set(0x22c55e);
+                const standard = m as THREE.MeshStandardMaterial;
+                if (standard.color) standard.color.set(0x22c55e);
               });
             }
           }
@@ -172,9 +186,11 @@ export default function KalimantanOnboarding() {
       Object.values(modelsRef.current).forEach((model) => {
         const isHovered = model.userData.hovered;
         const isActive =
-          isMobile &&
-          ((model.userData.id === "egrang" && activeGameIndex === 0) ||
-            (model.userData.id === "manukan" && activeGameIndex === 1));
+          isMobileRef.current &&
+          ((model.userData.id === "egrang" &&
+            activeGameIndexRef.current === 0) ||
+            (model.userData.id === "manukan" &&
+              activeGameIndexRef.current === 1));
 
         const baseScale = model.userData.originalScale;
         const targetScale = isHovered || isActive ? baseScale * 1.1 : baseScale;
@@ -220,7 +236,7 @@ export default function KalimantanOnboarding() {
         if (obj.userData.id) hitId = obj.userData.id;
       }
       Object.values(modelsRef.current).forEach((m) => {
-        m.userData.hovered = m.userData.id === (hitId as any);
+        m.userData.hovered = m.userData.id === hitId;
       });
       if (hitId) {
         setHoveredGame(hitId);
@@ -246,7 +262,7 @@ export default function KalimantanOnboarding() {
           obj.userData.id === "egrang"
             ? "/Kalimantan/game1"
             : "/Kalimantan/game2";
-        router.push(target);
+        triggerTransition(target);
       }
     };
 
@@ -265,14 +281,37 @@ export default function KalimantanOnboarding() {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mousedown", onClick);
       window.removeEventListener("resize", onResize);
-      if (rendererRef.current && rendererRef.current.domElement) {
-        rendererRef.current.dispose();
-      }
       if (animationFrameRef.current)
         cancelAnimationFrame(animationFrameRef.current);
       clearTimeout(fallbackTimeout);
+      dracoLoader.dispose();
+
+      Object.values(modelsRef.current).forEach((model) => {
+        scene.remove(model);
+        model.traverse((o) => {
+          if (o instanceof THREE.Mesh) {
+            o.geometry.dispose();
+            const materials = Array.isArray(o.material)
+              ? o.material
+              : [o.material];
+            materials.forEach((m) => m.dispose());
+          }
+        });
+      });
+      modelsRef.current = {};
+      groundGeo.dispose();
+      groundMat.dispose();
+      scene.clear();
+
+      renderer.dispose();
+      if (renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
+      rendererRef.current = null;
+      sceneRef.current = null;
+      cameraRef.current = null;
     };
-  }, [step, isMobile]); // Added isMobile to dependencies
+  }, [step, triggerTransition]);
 
   useEffect(() => {
     if (step !== 1) return;
@@ -324,9 +363,6 @@ export default function KalimantanOnboarding() {
     const target =
       activeGameIndex === 0 ? "/Kalimantan/game1" : "/Kalimantan/game2";
     triggerTransition(target);
-    setTimeout(() => {
-      window.location.href = target;
-    }, 2500);
   };
 
   return (
@@ -451,7 +487,7 @@ export default function KalimantanOnboarding() {
                 className="relative z-10 w-full max-w-[320px] md:max-w-none"
               >
                 <Image
-                  src="/pulau/Kalimantan.svg"
+                  src="/pulau/Kalimantan.webp"
                   alt="Peta Kalimantan"
                   width={500}
                   height={500}
@@ -521,9 +557,9 @@ export default function KalimantanOnboarding() {
               )}
             </div>
 
-            {/* Mobile Controls */}
-            <div className="md:hidden absolute bottom-8 w-full flex flex-col items-center gap-5 z-20">
-              <div className="flex gap-3 mb-1">
+            {/* Play Controls (mobile + desktop) */}
+            <div className="absolute bottom-8 w-full flex flex-col items-center gap-5 z-20">
+              <div className="flex gap-3 mb-1 md:hidden">
                 <div
                   className={`h-2.5 rounded-full transition-all duration-300 ${activeGameIndex === 0 ? "w-8 bg-[var(--color-primary)]" : "w-2.5 bg-[var(--color-primary)]/30"}`}
                 />
@@ -550,7 +586,7 @@ export default function KalimantanOnboarding() {
             </div>
 
             {/* Hint */}
-            <div className="hidden md:block absolute bottom-8 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
+            <div className="hidden md:block absolute bottom-24 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
               <p className="text-[var(--color-accent)] text-sm opacity-50 tracking-wide text-center animate-pulse">
                 Arahkan kursor ke model untuk melihat detail
               </p>

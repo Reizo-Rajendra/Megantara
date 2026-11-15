@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTransitionContext } from "@/components/TransitionContext";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
@@ -19,6 +20,7 @@ import Footer from "@/components/Footer";
 
 export default function PapuaSelectionPage() {
   const router = useRouter();
+  const { triggerTransition } = useTransitionContext();
   const mountRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [hoveredGame, setHoveredGame] = useState<string | null>(null);
@@ -39,6 +41,23 @@ export default function PapuaSelectionPage() {
   const modelsRef = useRef<{ [key: string]: THREE.Group }>({});
   const animationFrameRef = useRef<number | null>(null);
   const timeRef = useRef<number>(0);
+  const isMobileRef = useRef(false);
+  const activeGameIndexRef = useRef(0);
+
+  useEffect(() => {
+    isMobileRef.current = isMobile;
+  }, [isMobile]);
+
+  useEffect(() => {
+    activeGameIndexRef.current = activeGameIndex;
+  }, [activeGameIndex]);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
   // Text position refs
   const [textPositions, setTextPositions] = useState<{
@@ -58,11 +77,6 @@ export default function PapuaSelectionPage() {
   }, []);
 
   useEffect(() => {
-    // Mobile check
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-
     if (step !== 1 || !mountRef.current) return;
 
     // --- SETUP SCENE ---
@@ -82,6 +96,7 @@ export default function PapuaSelectionPage() {
     // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     mountRef.current.appendChild(renderer.domElement);
@@ -142,8 +157,6 @@ export default function PapuaSelectionPage() {
           scene.add(model);
           modelsRef.current[id] = model;
 
-          console.log(`Model loaded: ${name}`, model.position);
-
           if (Object.keys(modelsRef.current).length === 2) {
             setLoading(false);
           }
@@ -176,7 +189,9 @@ export default function PapuaSelectionPage() {
 
     // Helper to project 3D position to 2D screen
     const updateTextPositions = () => {
-      const newPositions: any = {};
+      const newPositions: {
+        [key: string]: { x: number; y: number };
+      } = {};
 
       Object.entries(modelsRef.current).forEach(([id, model]) => {
         const pos = model.position.clone();
@@ -198,9 +213,11 @@ export default function PapuaSelectionPage() {
       Object.values(modelsRef.current).forEach((model) => {
         const isHovered = model.userData.hovered;
         const isActive =
-          isMobile &&
-          ((model.userData.id === "kayu-malele" && activeGameIndex === 0) ||
-            (model.userData.id === "papeda" && activeGameIndex === 1));
+          isMobileRef.current &&
+          ((model.userData.id === "kayu-malele" &&
+            activeGameIndexRef.current === 0) ||
+            (model.userData.id === "papeda" &&
+              activeGameIndexRef.current === 1));
 
         const baseScale = model.userData.originalScale;
         const targetScale = isHovered || isActive ? baseScale * 1.1 : baseScale;
@@ -294,9 +311,8 @@ export default function PapuaSelectionPage() {
         const target =
           obj.userData.id === "kayu-malele" ? "/Papua/game1" : "/Papua/game2";
 
-        // CLEANUP before navigating? Next.js should handle component unmount.
-        // BUT explicit dispose helps.
-        router.push(target);
+        // CLEANUP sebelum navigasi ditangani oleh cleanup effect di bawah.
+        triggerTransition(target);
       }
     };
 
@@ -313,7 +329,7 @@ export default function PapuaSelectionPage() {
     window.addEventListener("resize", onResize);
 
     // Initial text pos
-    setTimeout(updateTextPositions, 1000); // Wait for load? Or call periodically
+    const textPosTimer = setTimeout(updateTextPositions, 1000);
 
     // Cleanup
     return () => {
@@ -322,19 +338,32 @@ export default function PapuaSelectionPage() {
       window.removeEventListener("resize", onResize);
       if (animationFrameRef.current)
         cancelAnimationFrame(animationFrameRef.current);
-      if (rendererRef.current) {
-        rendererRef.current.dispose();
-        if (mountRef.current)
-          mountRef.current.removeChild(rendererRef.current.domElement);
-      }
+      clearTimeout(textPosTimer);
+      dracoLoader.dispose();
+
       scene.traverse((o) => {
         if (o instanceof THREE.Mesh) {
           o.geometry.dispose();
-          if (o.material instanceof THREE.Material) o.material.dispose();
+          const materials = Array.isArray(o.material)
+            ? o.material
+            : [o.material];
+          materials.forEach((m) => m.dispose());
         }
       });
+      modelsRef.current = {};
+      groundGeo.dispose();
+      groundMat.dispose();
+      scene.clear();
+
+      renderer.dispose();
+      if (renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
+      rendererRef.current = null;
+      sceneRef.current = null;
+      cameraRef.current = null;
     };
-  }, [step, isMobile]);
+  }, [step, triggerTransition]);
 
   // Separate effect for Mobile Camera and Text Position Updates
   useEffect(() => {
@@ -369,10 +398,16 @@ export default function PapuaSelectionPage() {
       }
     };
 
+    let frame = 0;
     const loop = setInterval(() => {
       updateCam();
+      frame++;
+      // Posisi teks tidak perlu dihitung 60x/detik — cukup ~10x/detik.
+      if (frame % 6 !== 0) return;
       // Calculate text positions for the overlay
-      const newPositions: any = {};
+      const newPositions: {
+        [key: string]: { x: number; y: number };
+      } = {};
       if (cameraRef.current && rendererRef.current) {
         ["kayu-malele", "papeda"].forEach((id) => {
           const model = modelsRef.current[id];
@@ -405,10 +440,10 @@ export default function PapuaSelectionPage() {
     touchStartRef.current = null;
   };
 
-  // Play Click - Show cloud transition then hard reload
+  // Play Click - animasi transisi awan lalu navigasi SPA
   const handlePlay = () => {
     const target = activeGameIndex === 0 ? "/Papua/game1" : "/Papua/game2";
-    window.location.href = target;
+    triggerTransition(target);
   };
 
   return (
@@ -533,7 +568,7 @@ export default function PapuaSelectionPage() {
                   className="relative z-10 w-full max-w-[240px] md:max-w-none py-6 md:py-0"
                 >
                   <Image
-                    src="/pulau/papua.svg"
+                    src="/pulau/papua.webp"
                     alt="Peta Papua"
                     width={500}
                     height={500}
@@ -601,9 +636,9 @@ export default function PapuaSelectionPage() {
               )}
             </div>
 
-            {/* Mobile Controls */}
-            <div className="md:hidden absolute bottom-8 w-full flex flex-col items-center gap-5 z-20">
-              <div className="flex gap-3 mb-1">
+            {/* Play Controls (mobile + desktop) */}
+            <div className="absolute bottom-8 w-full flex flex-col items-center gap-5 z-20">
+              <div className="flex gap-3 mb-1 md:hidden">
                 <div
                   className={`h-2.5 rounded-full transition-all duration-300 ${activeGameIndex === 0 ? "w-8 bg-(--color-primary)" : "w-2.5 bg-(--color-primary)/30"}`}
                 />

@@ -1,51 +1,59 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useProgress } from "@react-three/drei";
+import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Cloud } from "lucide-react";
 
+/**
+ * Layar loading singkat untuk beranda.
+ *
+ * Sengaja tidak lagi memakai `useProgress` dari @react-three/drei karena:
+ * - drei menarik chunk besar ke jalur kritis beranda;
+ * - progress 3D baru mulai setelah layar ini selesai (CulturalRelic3D
+ *   di-load secara dinamis), sehingga menunggunya hanya menambah delay.
+ *
+ * Durasi dibuat singkat (±550 ms) supaya konten hero bisa segera tampil.
+ */
 export default function LoadingScreen({
   onFinished,
 }: {
   onFinished: () => void;
 }) {
-  const { progress: realProgress } = useProgress();
   const [progress, setProgress] = useState(0);
   const [isFinished, setIsFinished] = useState(false);
+  const onFinishedRef = useRef(onFinished);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        const remaining = 100 - prev;
-        const jump = Math.max(0.9, remaining * 0.09);
-        const next = prev + jump;
-        return next > 99.5 ? 100 : next;
-      });
-    }, 60);
+    onFinishedRef.current = onFinished;
+  }, [onFinished]);
 
-    return () => clearInterval(interval);
+  useEffect(() => {
+    const duration = 550;
+    const start = performance.now();
+    let frame = 0;
+    let finishTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const tick = (now: number) => {
+      const next = Math.min(100, ((now - start) / duration) * 100);
+      setProgress(next);
+
+      if (next < 100) {
+        frame = requestAnimationFrame(tick);
+      } else {
+        finishTimer = setTimeout(() => {
+          setIsFinished(true);
+          onFinishedRef.current();
+        }, 120);
+      }
+    };
+
+    frame = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      if (finishTimer) clearTimeout(finishTimer);
+    };
   }, []);
-
-  useEffect(() => {
-    if (realProgress > progress) {
-      setProgress(realProgress);
-    }
-  }, [realProgress, progress]);
-
-  useEffect(() => {
-    if (progress === 100) {
-      const timer = setTimeout(() => {
-        setIsFinished(true);
-        onFinished();
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [progress, onFinished]);
 
   return (
     <AnimatePresence>
@@ -53,7 +61,7 @@ export default function LoadingScreen({
         <motion.div
           initial={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.5, ease: "easeInOut" }}
+          transition={{ duration: 0.35, ease: "easeInOut" }}
           className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#EBF3FA] text-[#0F2C59]"
         >
           <div className="relative flex flex-col items-center">

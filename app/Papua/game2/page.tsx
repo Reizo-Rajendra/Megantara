@@ -18,7 +18,9 @@ class AudioManager {
     if (typeof window !== "undefined" && !this.ctx) {
       // Cross-browser support
       const AudioContextClass =
-        window.AudioContext || (window as any).webkitAudioContext;
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
       this.ctx = new AudioContextClass();
 
       // 1. Create White Noise Buffer for "Hissing" steam/water sound
@@ -65,7 +67,7 @@ class AudioManager {
     this.pourNode = gain;
 
     // Attach cleanup helper
-    (noise as any).stopNode = () => {
+    (noise as AudioBufferSourceNode & { stopNode?: () => void }).stopNode = () => {
       if (this.ctx) {
         gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.1);
         setTimeout(() => noise.stop(), 150);
@@ -78,7 +80,7 @@ class AudioManager {
       // Fade out volume
       this.pourNode.gain.linearRampToValueAtTime(
         0,
-        this.ctx?.currentTime! + 0.1,
+        (this.ctx?.currentTime ?? 0) + 0.1,
       );
       this.pourNode = null;
     }
@@ -179,6 +181,7 @@ export default function PapedaGame() {
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     mountRef.current.appendChild(renderer.domElement);
@@ -745,8 +748,8 @@ export default function PapedaGame() {
             The Art of Papeda
           </h1>
           <p className="text-lg md:text-xl text-gray-400 italic mb-6 md:mb-10 max-w-2xl font-light">
-            "Harmoni antara tangan {isMobile ? "kiri" : "kiri menuang"} dan
-            tangan kanan mengaduk."
+            “Harmoni antara tangan {isMobile ? "kiri" : "kiri menuang"} dan
+            tangan kanan mengaduk.”
           </p>
 
           <div className="bg-gray-800/60 backdrop-blur p-6 md:p-8 rounded-3xl border border-gray-700 max-w-lg w-full text-left space-y-6 mb-8 md:mb-10 shadow-2xl">

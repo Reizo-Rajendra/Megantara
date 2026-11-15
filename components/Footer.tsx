@@ -1,11 +1,39 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { ArrowUp, Cloud, Heart } from "lucide-react";
+import { useState } from "react";
+import { ArrowUp } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
+  const [suggestion, setSuggestion] = useState("");
+  const [suggestionStatus, setSuggestionStatus] = useState<
+    "idle" | "saved" | "error"
+  >("idle");
+
+  const handleSuggestionSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = suggestion.trim();
+    if (!trimmed) {
+      setSuggestionStatus("error");
+      return;
+    }
+
+    try {
+      const key = "megantara:suggestions";
+      const existing = JSON.parse(
+        window.localStorage.getItem(key) || "[]",
+      ) as unknown;
+      const list = Array.isArray(existing) ? existing : [];
+      list.push({ text: trimmed, createdAt: new Date().toISOString() });
+      window.localStorage.setItem(key, JSON.stringify(list));
+      setSuggestion("");
+      setSuggestionStatus("saved");
+    } catch {
+      setSuggestionStatus("error");
+    }
+  };
 
   const footerLinks = [
     { title: "Beranda", href: "/" },
@@ -29,11 +57,17 @@ export default function Footer() {
           <div className="flex flex-col justify-center">
             <Link
               href="/"
-              className="flex items-center gap-2.5 text-2xl font-black font-serif tracking-wider text-white"
+              className="flex items-center gap-3 text-2xl font-black font-serif tracking-wider text-white"
             >
-              <div className="w-8 h-8 rounded-lg bg-[#2563EB] flex items-center justify-center shadow-xs">
-                <Cloud className="w-4 h-4 text-white fill-white" />
-              </div>
+              <span className="inline-flex shrink-0 items-center rounded-lg bg-white px-2 py-1.5 shadow-xs">
+                <Image
+                  src="/logo-nusantara.png"
+                  alt="Logo Nusantara Indonesia"
+                  width={800}
+                  height={379}
+                  className="h-8 w-auto object-contain"
+                />
+              </span>
               <span>MEGANTARA</span>
             </Link>
             <p className="text-xs sm:text-sm text-sky-200/80 mt-2.5 max-w-xs leading-relaxed">
@@ -70,19 +104,35 @@ export default function Footer() {
             <p className="text-xs text-sky-200/80 mb-2.5">
               Punya ide artefak atau cerita daerah yang ingin dimasukkan?
             </p>
-            <div className="flex flex-col gap-2">
+            <form onSubmit={handleSuggestionSubmit} className="flex flex-col gap-2">
               <input
                 type="text"
+                value={suggestion}
+                onChange={(e) => {
+                  setSuggestion(e.target.value);
+                  if (suggestionStatus !== "idle") setSuggestionStatus("idle");
+                }}
                 placeholder="Tulis saran Anda..."
+                aria-label="Saran budaya"
                 className="w-full bg-[#0B1E3B] border border-sky-400/20 rounded-xl px-3 py-2 text-xs text-white placeholder:text-sky-200/40 focus:outline-none focus:border-sky-300 transition-colors"
               />
               <button
-                type="button"
+                type="submit"
                 className="self-end bg-[#2563EB] hover:bg-[#1D4ED8] text-white px-4 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
               >
                 Kirim
               </button>
-            </div>
+              {suggestionStatus === "saved" && (
+                <p className="text-[11px] text-emerald-300">
+                  Terima kasih! Saran Anda sudah tersimpan di perangkat ini.
+                </p>
+              )}
+              {suggestionStatus === "error" && (
+                <p className="text-[11px] text-rose-300">
+                  Saran tidak boleh kosong. Silakan tulis ide Anda dulu.
+                </p>
+              )}
+            </form>
           </div>
         </div>
 

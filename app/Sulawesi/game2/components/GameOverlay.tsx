@@ -38,8 +38,8 @@ const GameOverlay: React.FC<GameOverlayProps> = ({
               <Image
                 src={
                   isWon
-                    ? "/assets/Sulawesi/game1/FaceWin.png"
-                    : "/assets/Sulawesi/game1/FaceLose.png"
+                    ? "/assets/Sulawesi/game1/FaceWin.webp"
+                    : "/assets/Sulawesi/game1/FaceLose.webp"
                 }
                 alt={isWon ? "Menang" : "Kalah"}
                 fill

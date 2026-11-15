@@ -1,7 +1,14 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  ReactNode,
+} from "react";
 
 interface TransitionContextType {
   triggerTransition: (path: string) => void;
@@ -15,20 +22,31 @@ const TransitionContext = createContext<TransitionContextType | undefined>(
 );
 
 export const TransitionProvider = ({ children }: { children: ReactNode }) => {
-  const [isAnimating, setIsAnimating] = useState(false);
+  const [isAnimating, setIsAnimatingState] = useState(false);
   const [targetPath, setTargetPath] = useState<string | null>(null);
-  const router = useRouter();
+  // Ref agar pengecekan "sedang animasi" tidak bergantung pada closure state.
+  const animatingRef = useRef(false);
 
-  const triggerTransition = (path: string) => {
-    if (isAnimating) return; // Prevent double triggers
+  const setIsAnimating = useCallback((value: boolean) => {
+    animatingRef.current = value;
+    setIsAnimatingState(value);
+  }, []);
+
+  const triggerTransition = useCallback((path: string) => {
+    // Cegah trigger ganda (mis. klik beruntun) tanpa side effect di state updater.
+    if (animatingRef.current) return;
+    animatingRef.current = true;
     setTargetPath(path);
-    setIsAnimating(true);
-  };
+    setIsAnimatingState(true);
+  }, []);
+
+  const value = useMemo(
+    () => ({ triggerTransition, isAnimating, setIsAnimating, targetPath }),
+    [triggerTransition, isAnimating, setIsAnimating, targetPath],
+  );
 
   return (
-    <TransitionContext.Provider
-      value={{ triggerTransition, isAnimating, setIsAnimating, targetPath }}
-    >
+    <TransitionContext.Provider value={value}>
       {children}
     </TransitionContext.Provider>
   );

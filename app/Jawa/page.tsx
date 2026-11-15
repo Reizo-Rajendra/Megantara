@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTransitionContext } from "@/components/TransitionContext";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
@@ -19,6 +20,7 @@ import {
 
 export default function JawaOnboarding() {
   const router = useRouter();
+  const { triggerTransition } = useTransitionContext();
   const mountRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [hoveredGame, setHoveredGame] = useState<string | null>(null);
@@ -37,13 +39,28 @@ export default function JawaOnboarding() {
   const modelsRef = useRef<{ [key: string]: THREE.Group }>({});
   const animationFrameRef = useRef<number | null>(null);
   const timeRef = useRef<number>(0);
+  // Nilai ini dibaca di dalam animation loop. Disimpan sebagai ref agar
+  // scene tidak perlu dibuat ulang saat ukuran layar / pilihan game berubah.
+  const isMobileRef = useRef(false);
+  const activeGameIndexRef = useRef(0);
 
   useEffect(() => {
-    // Mobile check
+    isMobileRef.current = isMobile;
+  }, [isMobile]);
+
+  useEffect(() => {
+    activeGameIndexRef.current = activeGameIndex;
+  }, [activeGameIndex]);
+
+  // Deteksi ukuran layar dipisah dari setup scene.
+  useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
+  useEffect(() => {
     if (step !== 1 || !mountRef.current) return;
 
     // --- SETUP SCENE ---
@@ -61,7 +78,7 @@ export default function JawaOnboarding() {
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -174,9 +191,11 @@ export default function JawaOnboarding() {
       Object.values(modelsRef.current).forEach((model) => {
         const isHovered = model.userData.hovered;
         const isActive =
-          isMobile &&
-          ((model.userData.id === "gamelan" && activeGameIndex === 0) ||
-            (model.userData.id === "angklung" && activeGameIndex === 1));
+          isMobileRef.current &&
+          ((model.userData.id === "gamelan" &&
+            activeGameIndexRef.current === 0) ||
+            (model.userData.id === "angklung" &&
+              activeGameIndexRef.current === 1));
 
         const baseScale = model.userData.originalScale;
         const targetScale = isHovered || isActive ? baseScale * 1.1 : baseScale;
@@ -222,7 +241,7 @@ export default function JawaOnboarding() {
         if (obj.userData.id) hitId = obj.userData.id;
       }
       Object.values(modelsRef.current).forEach((m) => {
-        m.userData.hovered = m.userData.id === (hitId as any);
+        m.userData.hovered = m.userData.id === hitId;
       });
       if (hitId) {
         setHoveredGame(hitId);
@@ -251,7 +270,7 @@ export default function JawaOnboarding() {
 
     const handleNavigation = (id: string) => {
       const target = id === "gamelan" ? "/Jawa/game1" : "/Jawa/game2";
-      router.push(target);
+      triggerTransition(target);
     };
 
     const onResize = () => {
@@ -269,14 +288,38 @@ export default function JawaOnboarding() {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mousedown", onClick);
       window.removeEventListener("resize", onResize);
-      if (rendererRef.current && rendererRef.current.domElement) {
-        rendererRef.current.dispose();
-      }
       if (animationFrameRef.current)
         cancelAnimationFrame(animationFrameRef.current);
       clearTimeout(fallbackTimeout);
+      dracoLoader.dispose();
+
+      // Bersihkan semua model & material agar canvas tidak menumpuk.
+      Object.values(modelsRef.current).forEach((model) => {
+        scene.remove(model);
+        model.traverse((o) => {
+          if (o instanceof THREE.Mesh) {
+            o.geometry.dispose();
+            const materials = Array.isArray(o.material)
+              ? o.material
+              : [o.material];
+            materials.forEach((m) => m.dispose());
+          }
+        });
+      });
+      modelsRef.current = {};
+      groundGeo.dispose();
+      groundMat.dispose();
+      scene.clear();
+
+      renderer.dispose();
+      if (renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
+      rendererRef.current = null;
+      sceneRef.current = null;
+      cameraRef.current = null;
     };
-  }, [step, isMobile]);
+  }, [step, triggerTransition]);
 
   useEffect(() => {
     if (step !== 1) return;
@@ -326,7 +369,7 @@ export default function JawaOnboarding() {
 
   const handlePlay = () => {
     const target = activeGameIndex === 0 ? "/Jawa/game1" : "/Jawa/game2";
-    router.push(target);
+    triggerTransition(target);
   };
 
   return (
@@ -451,7 +494,7 @@ export default function JawaOnboarding() {
                 className="relative z-10 w-full max-w-[320px] md:max-w-none"
               >
                 <Image
-                  src="/pulau/jawa.svg"
+                  src="/pulau/jawa.webp"
                   alt="Peta Jawa"
                   width={600}
                   height={300}
@@ -521,9 +564,9 @@ export default function JawaOnboarding() {
               )}
             </div>
 
-            {/* Mobile Controls */}
-            <div className="md:hidden absolute bottom-8 w-full flex flex-col items-center gap-5 z-20">
-              <div className="flex gap-3 mb-1">
+            {/* Play Controls (mobile + desktop) */}
+            <div className="absolute bottom-8 w-full flex flex-col items-center gap-5 z-20">
+              <div className="flex gap-3 mb-1 md:hidden">
                 <div
                   className={`h-2.5 rounded-full transition-all duration-300 ${activeGameIndex === 0 ? "w-8 bg-[var(--color-primary)]" : "w-2.5 bg-[var(--color-primary)]/30"}`}
                 />
@@ -550,7 +593,7 @@ export default function JawaOnboarding() {
             </div>
 
             {/* Hint */}
-            <div className="hidden md:block absolute bottom-8 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
+            <div className="hidden md:block absolute bottom-24 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
               <p className="text-[var(--color-accent)] text-sm opacity-50 tracking-wide text-center animate-pulse">
                 Arahkan kursor ke model untuk melihat detail
               </p>

@@ -37,7 +37,14 @@ export default function EgrangGame() {
   // Efek suara (pakai beep standar browser buat logikanya)
   const playPop = () => {
     try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioCtor =
+        window.AudioContext ||
+        (
+          window as unknown as {
+            webkitAudioContext: typeof AudioContext;
+          }
+        ).webkitAudioContext;
+      const audioCtx = new AudioCtor();
       const oscillator = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
       oscillator.connect(gainNode);

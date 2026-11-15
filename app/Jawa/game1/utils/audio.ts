@@ -12,9 +12,14 @@ export class GamelanSynth {
 
   private init() {
     if (!this.ctx) {
-      this.ctx = new (
-        window.AudioContext || (window as any).webkitAudioContext
-      )();
+      const AudioCtor =
+        window.AudioContext ||
+        (
+          window as unknown as {
+            webkitAudioContext: typeof AudioContext;
+          }
+        ).webkitAudioContext;
+      this.ctx = new AudioCtor();
       this.masterGain = this.ctx.createGain();
       this.masterGain.gain.value = 0.6;
       this.masterGain.connect(this.ctx.destination);
@@ -22,6 +27,15 @@ export class GamelanSynth {
     if (this.ctx.state === "suspended") {
       this.ctx.resume();
     }
+  }
+
+  dispose() {
+    this.masterGain?.disconnect();
+    this.masterGain = null;
+    if (this.ctx && this.ctx.state !== "closed") {
+      void this.ctx.close();
+    }
+    this.ctx = null;
   }
 
   resume() {
