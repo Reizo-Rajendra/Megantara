@@ -272,3 +272,4 @@ Didistribusikan di bawah **Lisensi MIT**. Lihat file `LICENSE` untuk informasi s
   Didedikasikan untuk pelestarian dan pengenalan adiluhur warisan peradaban Nusantara.<br/>
   <b>Megantara</b> &bull; Dikembangkan dengan penuh integritas oleh <b>Reizo Rajendra & Teofilus</b>
 </div>
+
